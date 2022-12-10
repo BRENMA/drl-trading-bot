@@ -1,31 +1,19 @@
-import scipy as sp
 import math
 import pandas as pd
-import requests
-import json
 import matplotlib.dates as mdates
 import numpy as np
-import pickle
-import shutil
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-import seaborn as sns
 
 from datetime import datetime, timedelta
 from pandas.testing import assert_frame_equal
-from sklearn import metrics
-from sklearn.metrics import classification_report
-from sklearn.model_selection import train_test_split
 
-from sklearn.preprocessing import MinMaxScaler 
 from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
-from IPython.display import display, HTML
 
 window_size = 60
 
