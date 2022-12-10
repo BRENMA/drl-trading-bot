@@ -154,7 +154,7 @@ class CoinbaseAPI:
             dropping_these_features = [column for column in upper_tri.columns if any(upper_tri[column] > 0.95)]
             print(dropping_these_features)
             for droppingFeature in dropping_these_features:
-                if str(droppingFeature) != 'close':
+                if str(droppingFeature) != 'open' and str(droppingFeature) != 'high' and str(droppingFeature) != 'low' and str(droppingFeature) != 'close' and str(droppingFeature) != 'volume':
                     del df[str(droppingFeature)]
 
             # [ time, low, high, open, close, volume, rf, rsi, macd, cci, dx, sar, adx, adxr, apo, aroonosc, bop, cmo, mfi, minus_di, minus_dm, mom, plus_di, plus_dm, ppo_ta, roc, rocp, rocr, rocr100, trix, ultosc, willr, ad, adosc, obv, roc, ht_dcphase, ht_sine, ht_trendmode]

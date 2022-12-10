@@ -3,7 +3,7 @@ import torch
 DATASET_DIR = "datasets/"
 COIN_PAIRS = [["BTC-USD", "2018-04-01"], ["ETH-USD", "2018-04-01"], ["SOL-USD", "2020-05-01"], ["AVAX-USD", "2020-10-01"], ["ATOM-USD", "2019-06-01"], ["MATIC-USD", "2021-02-01"], ["ADA-USD", "2018-04-01"], ["XRP-USD", "2018-04-01"], ["LINK-USD", "2018-04-01"]]
 GRANULARITY = 60 #3600 # Data every 1 hour
-END_DATE = "2022-10-01" 
+END_DATE = "2022-11-20" 
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
