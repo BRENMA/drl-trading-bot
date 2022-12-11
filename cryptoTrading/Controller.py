@@ -21,3 +21,14 @@ if __name__ == '__main__':
     if args.data:
         coinbaseAPI = CoinbaseAPI()
         historic_data = coinbaseAPI.getCoinHistoricData(COIN_PAIRS, end = END_DATE, granularity = GRANULARITY)
+
+
+
+# merging two csv files
+#df = pd.concat(map(pd.read_csv, ['datasets/ADA-USD.csv']), ignore_index=True)#, 'datasets/ATOM-USD.csv', 'datasets/AVAX-USD.csv', 'datasets/BTC-USD.csv', 'datasets/ETH-USD.csv', 'datasets/LINK-USD.csv', 'datasets/MATIC-USD.csv', 'datasets/SOL-USD.csv', 'datasets/XRP-USD.csv']), ignore_index=True)
+#df = df.dropna(axis='columns')
+#print(len(df))
+#print("> Creating X,Y sets")
+#
+#df = df[['time', 'open', 'high', 'low', 'close', 'volume']]
+#print(df)

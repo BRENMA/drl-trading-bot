@@ -30,23 +30,11 @@ from sklearn.preprocessing import MinMaxScaler
 from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 from IPython.display import display, HTML
 
-#model = ForecastingCascade(
-#    make_pipeline(
-#        IterativeImputer(Ridge(), max_iter=10), 
-#        Ridge()
-#    ),
-#    lags=range(1,169),
-#    use_exog=False,
-#    accept_nan=True
-#)
-#model.fit(None, y)
-#pred = model.predict(np.arange(168))
-
 print("\n\n\n'88,dPYba,,adPYba,   ,adPPYba,  8b,dPPYba,   ,adPPYba, 8b       d8  \n","88P'   '88'    '8a a8'     '8a 88P'   `'8a a8P_____88 `8b     d8'  \n","88      88      88 8b       d8 88       88 8PP'''''''  `8b   d8'   \n","88      88      88 '8a,   ,a8' 88       88 '8b,   ,aa   `8b,d8'    \n","88      88      88  `'YbbdP''  88       88  `'Ybbd8''     Y88'     \n","                                                          d8'      \n","                                                         d8'       \n")
 print("> welcome to moneyDRL")
 print("> Creating Testing Data")
 
-ticker_list = ['ETHUSDT']
+ticker_list = ['BTCUSDT']
 
 TIME_INTERVAL = '1m'
 
@@ -55,8 +43,7 @@ TRAIN_END_DATE= '2019-08-01'
 TRADE_START_DATE = '2019-08-01'
 TRADE_END_DATE = '2020-01-03'
 
-
-technical_indicator_list = ['macd','macd_signal','macd_hist','rsi','cci','dx']
+technical_indicator_list = ["rf","rsi","macd","macd_hist","cci","dx","sar","adx","adxr","apo","aroonosc","bop","mfi","minus_di","minus_dm","mom","plus_di","plus_dm","ppo_ta","roc","rocp","trix","ultosc","willr","ad","adosc","obv","ht_dcphase","ht_sine","ht_trendmode"]
 
 if_vix = False
      
@@ -67,32 +54,19 @@ df = p.dataframe
 
 print(df.head())
 
-#p.download_data(ticker_list=ticker_list)
-#p.clean_data()
-#df = p.dataframe
-     
-#print(df.head())
-
-# merging two csv files
-#df = pd.concat(map(pd.read_csv, ['datasets/ADA-USD.csv']), ignore_index=True)#, 'datasets/ATOM-USD.csv', 'datasets/AVAX-USD.csv', 'datasets/BTC-USD.csv', 'datasets/ETH-USD.csv', 'datasets/LINK-USD.csv', 'datasets/MATIC-USD.csv', 'datasets/SOL-USD.csv', 'datasets/XRP-USD.csv']), ignore_index=True)
-#df = df.dropna(axis='columns')
-#print(len(df))
-#print("> Creating X,Y sets")
-#
-#df = df[['time', 'open', 'high', 'low', 'close', 'volume']]
-#print(df)
-
 dollar_bars = []
 running_volume = 0
 running_high, running_low = 0, math.inf
 dollar_threshold = 50000000
+#[time, low, high, open, close, volume, rf, rsi, macd, cci, dx, sar, adx, adxr, apo, aroonosc, bop, cmo, mfi, minus_di, minus_dm, mom, plus_di, plus_dm, ppo_ta, roc, rocp, rocr, rocr100, trix, ultosc, willr, ad, adosc, obv, roc, ht_dcphase, ht_sine, ht_trendmode]
 
 for i in range(0, len(df)): 
     print(len(df) - i)
+    
+    next_timestamp, next_open, next_high, next_low, next_close, next_volume = [df.iloc[i][k] for k in ['time', 'open', 'high', 'low', 'close', 'volume']]
+    #print(next_timestamp, next_open, next_high, next_low, next_close, next_volume)
 
-    #[time, low, high, open, close, volume, rf, rsi, macd, cci, dx, sar, adx, adxr, apo, aroonosc, bop, cmo, mfi, minus_di, minus_dm, mom, plus_di, plus_dm, ppo_ta, roc, rocp, rocr, rocr100, trix, ultosc, willr, ad, adosc, obv, roc, ht_dcphase, ht_sine, ht_trendmode]
-    next_timestamp, next_open, next_high, next_low, next_close, next_volume = [df[i][k] for k in ['time', 'open', 'high', 'low', 'close', 'volume']]
-    print(next_timestamp, next_open, next_high, next_low, next_close, next_volume)
+    next_timestamp = pd.to_datetime(next_timestamp)
 
     # get the midpoint price of the next bar (the average of the open and the close)
     midpoint_price = (next_open + next_close)/2
@@ -106,7 +80,7 @@ for i in range(0, len(df)):
     if dollar_volume + running_volume >= dollar_threshold:
 
         # set the timestamp for the dollar bar as the timestamp at which the bar closed (i.e. one minute after the timestamp of the last minutely bar included in the dollar bar)
-        bar_timestamp = next_timestamp + 60
+        bar_timestamp = next_timestamp + pd.to_timedelta(60, 's')
 
         # add a new dollar bar to the list of dollar bars with the timestamp, running high/low, and next close
         dollar_bars += [{'timestamp': bar_timestamp, 'high': running_high, 'low': running_low, 'close': next_close}]
@@ -121,15 +95,36 @@ for i in range(0, len(df)):
     else:
         running_volume += dollar_volume
 
-    hour_data = df.iloc[i: (i + (window_size + 1)), :]
-    if hour_data['time'].iloc[-1] - hour_data['time'].iloc[0] == 3600:
-        del hour_data['time']
-        t = []
-        output_y.append(hour_data.iloc[-1].values.tolist())
-        for j in range(0, window_size):
-            hrData = hour_data.iloc[j].values.tolist()
-            t.append(hrData)
-        output_x.append(t)
+df = pd.DataFrame(dollar_bars)
+
+def add_technical_indicator(df, tech_indicator_list):
+    # print('Adding self-defined technical indicators is NOT supported yet.')
+    # print('Use default: MACD, RSI, CCI, DX.')
+
+    final_df = pd.DataFrame()
+    for i in df.tic.unique():
+        tic_df = df[df.tic == i].copy()
+        tic_df['rsi'] = RSI(tic_df['close'], timeperiod=14)
+        tic_df['macd'], tic_df['macd_signal'], tic_df['macd_hist'] = MACD(tic_df['close'], fastperiod=12,
+                                                                          slowperiod=26, signalperiod=9)
+        tic_df['cci'] = CCI(tic_df['high'], tic_df['low'], tic_df['close'], timeperiod=14)
+        tic_df['dx'] = DX(tic_df['high'], tic_df['low'], tic_df['close'], timeperiod=14)
+        final_df = final_df.append(tic_df)
+    return final_df
+
+processed_df=add_technical_indicator(df,technical_indicator_list)
+processed_df.tail()
+
+
+
+
+
+
+
+
+
+
+
 
 
 min_max_scaler = MinMaxScaler()
