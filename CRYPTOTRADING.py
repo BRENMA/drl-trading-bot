@@ -1,30 +1,136 @@
+import scipy as sp
 import math
 import pandas as pd
+import requests
+import json
 import matplotlib.dates as mdates
 import numpy as np
+import pickle
+import shutil
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from meta.data_processor import DataProcessor
 
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+import seaborn as sns
 
 from datetime import datetime, timedelta
-from pandas.testing import assert_frame_equal
+from talib.abstract import MACD, RSI, CCI, DX
+from binance.client import Client
+from sklearn import metrics
+from sklearn.metrics import classification_report
+from sklearn.model_selection import train_test_split
+#from imblearn.over_sampling import SMOTE
 
+from sklearn.preprocessing import MinMaxScaler 
 from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
+from IPython.display import display, HTML
 
-window_size = 60
+#model = ForecastingCascade(
+#    make_pipeline(
+#        IterativeImputer(Ridge(), max_iter=10), 
+#        Ridge()
+#    ),
+#    lags=range(1,169),
+#    use_exog=False,
+#    accept_nan=True
+#)
+#model.fit(None, y)
+#pred = model.predict(np.arange(168))
 
 print("\n\n\n'88,dPYba,,adPYba,   ,adPPYba,  8b,dPPYba,   ,adPPYba, 8b       d8  \n","88P'   '88'    '8a a8'     '8a 88P'   `'8a a8P_____88 `8b     d8'  \n","88      88      88 8b       d8 88       88 8PP'''''''  `8b   d8'   \n","88      88      88 '8a,   ,a8' 88       88 '8b,   ,aa   `8b,d8'    \n","88      88      88  `'YbbdP''  88       88  `'Ybbd8''     Y88'     \n","                                                          d8'      \n","                                                         d8'       \n")
 print("> welcome to moneyDRL")
 print("> Creating Testing Data")
+
+ticker_list = ['ETHUSDT']
+
+TIME_INTERVAL = '1m'
+
+TRAIN_START_DATE = '2015-01-01'
+TRAIN_END_DATE= '2019-08-01'
+TRADE_START_DATE = '2019-08-01'
+TRADE_END_DATE = '2020-01-03'
+
+
+technical_indicator_list = ['macd','macd_signal','macd_hist','rsi','cci','dx']
+
+if_vix = False
+     
+p = DataProcessor(data_source='binance', start_date=TRAIN_START_DATE, end_date=TRADE_END_DATE, time_interval=TIME_INTERVAL)
+p.download_data(ticker_list)
+p.clean_data()
+df = p.dataframe
+
+print(df.head())
+
+#p.download_data(ticker_list=ticker_list)
+#p.clean_data()
+#df = p.dataframe
+     
+#print(df.head())
+
 # merging two csv files
-df = pd.concat(map(pd.read_csv, ['datasets/ADA-USD.csv']), ignore_index=True)#, 'datasets/ATOM-USD.csv', 'datasets/AVAX-USD.csv', 'datasets/BTC-USD.csv', 'datasets/ETH-USD.csv', 'datasets/LINK-USD.csv', 'datasets/MATIC-USD.csv', 'datasets/SOL-USD.csv', 'datasets/XRP-USD.csv']), ignore_index=True)
-df = df.dropna(axis='columns')
-print(len(df))
-print("> Creating X,Y sets")
+#df = pd.concat(map(pd.read_csv, ['datasets/ADA-USD.csv']), ignore_index=True)#, 'datasets/ATOM-USD.csv', 'datasets/AVAX-USD.csv', 'datasets/BTC-USD.csv', 'datasets/ETH-USD.csv', 'datasets/LINK-USD.csv', 'datasets/MATIC-USD.csv', 'datasets/SOL-USD.csv', 'datasets/XRP-USD.csv']), ignore_index=True)
+#df = df.dropna(axis='columns')
+#print(len(df))
+#print("> Creating X,Y sets")
+#
+#df = df[['time', 'open', 'high', 'low', 'close', 'volume']]
+#print(df)
+
+dollar_bars = []
+running_volume = 0
+running_high, running_low = 0, math.inf
+dollar_threshold = 50000000
+
+for i in range(0, len(df)): 
+    print(len(df) - i)
+
+    #[time, low, high, open, close, volume, rf, rsi, macd, cci, dx, sar, adx, adxr, apo, aroonosc, bop, cmo, mfi, minus_di, minus_dm, mom, plus_di, plus_dm, ppo_ta, roc, rocp, rocr, rocr100, trix, ultosc, willr, ad, adosc, obv, roc, ht_dcphase, ht_sine, ht_trendmode]
+    next_timestamp, next_open, next_high, next_low, next_close, next_volume = [df[i][k] for k in ['time', 'open', 'high', 'low', 'close', 'volume']]
+    print(next_timestamp, next_open, next_high, next_low, next_close, next_volume)
+
+    # get the midpoint price of the next bar (the average of the open and the close)
+    midpoint_price = (next_open + next_close)/2
+
+    # get the approximate dollar volume of the bar using the volume and the midpoint price
+    dollar_volume = next_volume * midpoint_price
+
+    running_high, running_low = max(running_high, next_high), min(running_low, next_low)
+
+    # if the next bar's dollar volume would take us over the threshold...
+    if dollar_volume + running_volume >= dollar_threshold:
+
+        # set the timestamp for the dollar bar as the timestamp at which the bar closed (i.e. one minute after the timestamp of the last minutely bar included in the dollar bar)
+        bar_timestamp = next_timestamp + 60
+
+        # add a new dollar bar to the list of dollar bars with the timestamp, running high/low, and next close
+        dollar_bars += [{'timestamp': bar_timestamp, 'high': running_high, 'low': running_low, 'close': next_close}]
+
+        # reset the running volume to zero
+        running_volume = 0
+
+        # reset the running high and low to placeholder values
+        running_high, running_low = 0, math.inf
+
+    # otherwise, increment the running volume
+    else:
+        running_volume += dollar_volume
+
+    hour_data = df.iloc[i: (i + (window_size + 1)), :]
+    if hour_data['time'].iloc[-1] - hour_data['time'].iloc[0] == 3600:
+        del hour_data['time']
+        t = []
+        output_y.append(hour_data.iloc[-1].values.tolist())
+        for j in range(0, window_size):
+            hrData = hour_data.iloc[j].values.tolist()
+            t.append(hrData)
+        output_x.append(t)
+
 
 min_max_scaler = MinMaxScaler()
 for column in df:
@@ -40,17 +146,18 @@ print(trainData)
 
 output_x = []
 output_y = []
-for i in range(0, len(df) - (window_size + 1)):
-    print(len(df) - window_size - i)
-    hour_data = df.iloc[i: (i + (window_size + 1)), :]
-    if hour_data['time'].iloc[-1] - hour_data['time'].iloc[0] == 3600:
-        del hour_data['time']
-        t = []
-        output_y.append(hour_data.iloc[-1].values.tolist())
-        for j in range(0, window_size):
-            hrData = hour_data.iloc[j].values.tolist()
-            t.append(hrData)
-        output_x.append(t)
-    
-    output_x = np.array(output_x)
-    output_x = output_x.reshape(output_x.shape[0], window_size, data_columns)
+#for i in range(0, len(df) - (window_size + 1)):
+#    print(len(df) - window_size - i)
+#    hour_data = df.iloc[i: (i + (window_size + 1)), :]
+#    if hour_data['time'].iloc[-1] - hour_data['time'].iloc[0] == 3600:
+#        del hour_data['time']
+#        t = []
+#        output_y.append(hour_data.iloc[-1].values.tolist())
+#        for j in range(0, window_size):
+#            hrData = hour_data.iloc[j].values.tolist()
+#            t.append(hrData)
+#        output_x.append(t)
+#    
+#    output_x = np.array(output_x)
+#    output_x = output_x.reshape(output_x.shape[0], window_size, data_columns)
+#
