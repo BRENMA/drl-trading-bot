@@ -19,7 +19,9 @@ import torch.optim as optim
 import seaborn as sns
 
 from datetime import datetime, timedelta
+import time
 from talib.abstract import MACD, RSI, CCI, DX
+import talib as ta
 from binance.client import Client
 from sklearn import metrics
 from sklearn.metrics import classification_report
@@ -34,13 +36,11 @@ print("\n\n\n'88,dPYba,,adPYba,   ,adPPYba,  8b,dPPYba,   ,adPPYba, 8b       d8 
 print("> welcome to moneyDRL")
 print("> Creating Testing Data")
 
-ticker_list = ['BTCUSDT']
-
+ticker_list = ['ETHUSDT']
 TIME_INTERVAL = '1m'
-
-TRAIN_START_DATE = '2015-01-01'
-TRAIN_END_DATE= '2019-08-01'
-TRADE_START_DATE = '2019-08-01'
+TRAIN_START_DATE = '2010-01-01'
+#TRAIN_END_DATE= '2019-08-01'
+#TRADE_START_DATE = '2019-08-01'
 TRADE_END_DATE = '2020-01-03'
 
 technical_indicator_list = ["rf","rsi","macd","macd_hist","cci","dx","sar","adx","adxr","apo","aroonosc","bop","mfi","minus_di","minus_dm","mom","plus_di","plus_dm","ppo_ta","roc","rocp","trix","ultosc","willr","ad","adosc","obv","ht_dcphase","ht_sine","ht_trendmode"]
@@ -52,12 +52,66 @@ p.download_data(ticker_list)
 p.clean_data()
 df = p.dataframe
 
+#index = df.index
+#df = df.insert(0, 'oldIndex', index.to_list())
+df.reset_index(drop=True, inplace=True)
+
 print(df.head())
+
+#add FNG index
+url = "https://api.alternative.me/fng/?limit=0"
+response = requests.request("GET", url)
+dataRes = response.json()
+dfFnG = pd.json_normalize(dataRes['data'])
+del dfFnG['value_classification']
+del dfFnG['time_until_update']
+dfFnG = dfFnG.iloc[::-1]
+
+FnGArr = list(dfFnG.timestamp)
+target = df.iloc[0:1440]["time"].to_list()
+FnGStartPoint = 0
+
+for n in range(len(target)):
+    if FnGStartPoint == 0:
+        for i in range(len(FnGArr)):
+            if (datetime.fromtimestamp(int(FnGArr[i])).strftime('%Y-%m-%d %H:%M:%S') == target[n]):
+                FnGStartPoint = i
+    else:
+        print("start point found")
+
+firstFnG = FnGStartPoint
+
+DFStartIndex = df[df['time']== datetime.fromtimestamp(int(FnGArr[FnGStartPoint])).strftime('%Y-%m-%d %H:%M:%S')].index[0]
+df = df.iloc[DFStartIndex:]
+print(df)
+
+FnGIndArr = []
+for i in range(len(df)):
+    print(len(df) - i)
+
+    dfUnixTime = int(time.mktime(datetime.strptime(df.iloc[i]['time'],"%Y-%m-%d %H:%M:%S").timetuple()))
+    #if dfUnixTime < int(dfFnG.iloc[firstFnG]['timestamp']):
+    #    df.drop([i])
+    #    print(int(dfFnG.iloc[firstFnG]['timestamp']))
+    #    print(dfUnixTime)
+    #    print('\n')
+    #else:
+    if dfUnixTime >= int(dfFnG.iloc[FnGStartPoint + 1]['timestamp']):
+        FnGStartPoint += 1
+
+    FnGIndArr.append(int(dfFnG.iloc[FnGStartPoint]['value']))
+
+df.insert(0, "fngindex", FnGIndArr, True)
+df.dropna()
+
+df.to_csv('test.csv')
+print("> Storing Raw Historic Data")
 
 dollar_bars = []
 running_volume = 0
 running_high, running_low = 0, math.inf
 dollar_threshold = 50000000
+period_lengths = [4, 8, 16, 32, 64, 128, 256]
 #[time, low, high, open, close, volume, rf, rsi, macd, cci, dx, sar, adx, adxr, apo, aroonosc, bop, cmo, mfi, minus_di, minus_dm, mom, plus_di, plus_dm, ppo_ta, roc, rocp, rocr, rocr100, trix, ultosc, willr, ad, adosc, obv, roc, ht_dcphase, ht_sine, ht_trendmode]
 
 for i in range(0, len(df)): 
@@ -97,24 +151,82 @@ for i in range(0, len(df)):
 
 df = pd.DataFrame(dollar_bars)
 
-def add_technical_indicator(df, tech_indicator_list):
-    # print('Adding self-defined technical indicators is NOT supported yet.')
-    # print('Use default: MACD, RSI, CCI, DX.')
+def add_feature_columns(df, period_length):
 
-    final_df = pd.DataFrame()
-    for i in df.tic.unique():
-        tic_df = df[df.tic == i].copy()
-        tic_df['rsi'] = RSI(tic_df['close'], timeperiod=14)
-        tic_df['macd'], tic_df['macd_signal'], tic_df['macd_hist'] = MACD(tic_df['close'], fastperiod=12,
-                                                                          slowperiod=26, signalperiod=9)
-        tic_df['cci'] = CCI(tic_df['high'], tic_df['low'], tic_df['close'], timeperiod=14)
-        tic_df['dx'] = DX(tic_df['high'], tic_df['low'], tic_df['close'], timeperiod=14)
-        final_df = final_df.append(tic_df)
-    return final_df
+    # get the price vs ewma feature
+    df[f'feature_PvEWMA_{period_length}'] = df['close']/df['close'].ewm(span=period_length).mean() - 1
 
-processed_df=add_technical_indicator(df,technical_indicator_list)
-processed_df.tail()
+    # get the price vs cumulative high/low range feature
+    df[f'feature_PvCHLR_{period_length}'] = (df['close'] - df['low'].rolling(period_length).min()) / (df['high'].rolling(period_length).max() - df['low'].rolling(period_length).min())
 
+    # get the return vs rolling high/low range feature
+    df[f'feature_RvRHLR_{period_length}'] = df['close'].pct_change(period_length)/((df['high']/df['low'] - 1).rolling(period_length).mean())
+
+    # get the convexity/concavity feature
+    df[f'feature_CON_{period_length}'] = (df['close'] + df['close'].shift(period_length))/(2 * df['close'].rolling(period_length+1).mean()) - 1
+
+    # get the rolling autocorrelation feature
+    df[f'feature_RACORR_{period_length}'] = df['close'].rolling(period_length).apply(lambda x: x.autocorr()).fillna(0)
+
+    # return the bars df with the new feature columns added
+    return df
+
+# for each period length
+for period_length in period_lengths:
+    # add the feature columns to the bars df
+    df = add_feature_columns(df, period_length)
+
+# prune the nan rows at the beginning of the dataframe
+df = df[period_lengths[-1]:]
+
+# filter out the high/low/close columns and return 
+df = df[[column for column in df.columns if column not in ['high', 'low', 'close']]]
+
+print(df)
+
+for i in df.tic.unique():
+    #ORIGINAL INDICATORS
+    tic_df = df[df.tic == i].copy()
+    tic_df['rsi'] = RSI(tic_df['close'], timeperiod=14)
+    tic_df['macd'], tic_df['macd_signal'], tic_df['macd_hist'] = MACD(tic_df['close'], fastperiod=12, slowperiod=26, signalperiod=9)
+    tic_df['cci'] = CCI(tic_df['high'], tic_df['low'], tic_df['close'], timeperiod=14)
+    tic_df['dx'] = DX(tic_df['high'], tic_df['low'], tic_df['close'], timeperiod=14)
+ 
+    #OTHERS I ADDED
+    #Overlap studies
+    df["rf"] = df["close"].pct_change().shift(-1)
+
+    tic_df['sar'] = ta.SAR(df['high'], df['low'], acceleration=0., maximum=0.)
+
+    # Added momentum indicators
+    df['adx'] = ta.ADX(df['high'], df['low'], df['close'])
+    df['adxr'] = ta.ADXR(df['high'], df['low'], df['close'])
+    df['apo'] = ta.APO(df['close'])
+    df['aroonosc'] = ta.AROONOSC(df['high'], df['low'])
+    df['bop'] = ta.BOP(df['open'], df['high'], df['low'], df['close'])
+    df['cmo'] = ta.CMO(df['close'])
+    df['mfi'] = ta.MFI(df['high'], df['low'], df['close'],df['volume'])
+    df['minus_di'] = ta.MINUS_DI(df['high'], df['low'], df['close'])
+    df['minus_dm'] = ta.MINUS_DM(df['high'], df['low'])
+    df['mom'] = ta.MOM(df['close'])
+    df['plus_di'] = ta.PLUS_DI(df['high'], df['low'], df['close'])
+    df['plus_dm'] = ta.PLUS_DM(df['high'], df['low'])
+    df['ppo_ta'] = ta.PPO(df['close'])
+    df['roc'] = ta.ROC(df['close'])
+    df['rocp'] = ta.ROCP(df['close'])
+    df['rocr'] = ta.ROCR(df['close'])
+    df['rocr100'] = ta.ROCR100(df['close'])
+    df['trix'] = ta.TRIX(df['close'])
+    df['ultosc'] = ta.ULTOSC(df['high'], df['low'], df['close'])
+    df['willr'] = ta.WILLR(df['high'], df['low'], df['close'])
+
+    # Cycle indicator functions
+    df['roc'] = ta.HT_DCPERIOD(df['close'])
+    df['ht_dcphase'] = ta.HT_DCPHASE(df['close'])
+    df['ht_sine'], _ = ta.HT_SINE(df['close'])
+    df['ht_trendmode'] = ta.HT_TRENDMODE(df['close'])
+
+    final_df = final_df.append(tic_df)
 
 
 
