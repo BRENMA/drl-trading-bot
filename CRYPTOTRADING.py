@@ -38,7 +38,7 @@ print("> Creating Testing Data")
 
 ticker_list = ['ETHUSDT']
 TIME_INTERVAL = '1m'
-TRAIN_START_DATE = '2010-01-01'
+TRAIN_START_DATE = '2020-01-01'
 #TRAIN_END_DATE= '2019-08-01'
 #TRADE_START_DATE = '2019-08-01'
 TRADE_END_DATE = '2020-01-03'
@@ -74,7 +74,7 @@ FnGStartPoint = 0
 for n in range(len(target)):
     if FnGStartPoint == 0:
         for i in range(len(FnGArr)):
-            if (datetime.fromtimestamp(int(FnGArr[i])).strftime('%Y-%m-%d %H:%M:%S') == target[n]):
+            if (int(FnGArr[i]) == time.mktime(datetime.strptime(target[n], '%Y-%m-%d %H:%M:%S').timetuple())):
                 FnGStartPoint = i
     else:
         print("start point found")
@@ -83,7 +83,6 @@ firstFnG = FnGStartPoint
 
 DFStartIndex = df[df['time']== datetime.fromtimestamp(int(FnGArr[FnGStartPoint])).strftime('%Y-%m-%d %H:%M:%S')].index[0]
 df = df.iloc[DFStartIndex:]
-print(df)
 
 FnGIndArr = []
 for i in range(len(df)):
@@ -103,9 +102,6 @@ for i in range(len(df)):
 
 df.insert(0, "fngindex", FnGIndArr, True)
 df.dropna()
-
-df.to_csv('test.csv')
-print("> Storing Raw Historic Data")
 
 dollar_bars = []
 running_volume = 0
@@ -150,6 +146,8 @@ for i in range(0, len(df)):
         running_volume += dollar_volume
 
 df = pd.DataFrame(dollar_bars)
+df.to_csv('test.csv')
+print("> Storing Raw Historic Data")
 
 def add_feature_columns(df, period_length):
 
