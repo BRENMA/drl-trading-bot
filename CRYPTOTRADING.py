@@ -38,7 +38,7 @@ print("> Creating Testing Data")
 
 ticker_list = ['ETHUSDT']
 TIME_INTERVAL = '1m'
-TRAIN_START_DATE = '2020-01-01'
+TRAIN_START_DATE = '2019-12-20'
 #TRAIN_END_DATE= '2019-08-01'
 #TRADE_START_DATE = '2019-08-01'
 TRADE_END_DATE = '2020-01-03'
@@ -78,6 +78,7 @@ for n in range(len(target)):
                 FnGStartPoint = i
     else:
         print("start point found")
+        break
 
 firstFnG = FnGStartPoint
 
@@ -89,33 +90,27 @@ for i in range(len(df)):
     print(len(df) - i)
 
     dfUnixTime = int(time.mktime(datetime.strptime(df.iloc[i]['time'],"%Y-%m-%d %H:%M:%S").timetuple()))
-    #if dfUnixTime < int(dfFnG.iloc[firstFnG]['timestamp']):
-    #    df.drop([i])
-    #    print(int(dfFnG.iloc[firstFnG]['timestamp']))
-    #    print(dfUnixTime)
-    #    print('\n')
-    #else:
+
     if dfUnixTime >= int(dfFnG.iloc[FnGStartPoint + 1]['timestamp']):
         FnGStartPoint += 1
 
     FnGIndArr.append(int(dfFnG.iloc[FnGStartPoint]['value']))
 
 df.insert(0, "fngindex", FnGIndArr, True)
-df.dropna()
+print(df)
 
 dollar_bars = []
 running_volume = 0
+running_FnG = 0
+running_open = 0
 running_high, running_low = 0, math.inf
-dollar_threshold = 50000000
-period_lengths = [4, 8, 16, 32, 64, 128, 256]
-#[time, low, high, open, close, volume, rf, rsi, macd, cci, dx, sar, adx, adxr, apo, aroonosc, bop, cmo, mfi, minus_di, minus_dm, mom, plus_di, plus_dm, ppo_ta, roc, rocp, rocr, rocr100, trix, ultosc, willr, ad, adosc, obv, roc, ht_dcphase, ht_sine, ht_trendmode]
+dollar_threshold = 5000000
+period_lengths = [4, 8, 16]#, 32, 64, 128, 256]
 
 for i in range(0, len(df)): 
     print(len(df) - i)
     
-    next_timestamp, next_open, next_high, next_low, next_close, next_volume = [df.iloc[i][k] for k in ['time', 'open', 'high', 'low', 'close', 'volume']]
-    #print(next_timestamp, next_open, next_high, next_low, next_close, next_volume)
-
+    next_timestamp, next_open, next_high, next_low, next_close, next_volume, next_FnG, next_tic = [df.iloc[i][k] for k in ['time', 'open', 'high', 'low', 'close', 'volume', 'fngindex', 'tic']]
     next_timestamp = pd.to_datetime(next_timestamp)
 
     # get the midpoint price of the next bar (the average of the open and the close)
@@ -125,6 +120,14 @@ for i in range(0, len(df)):
     dollar_volume = next_volume * midpoint_price
 
     running_high, running_low = max(running_high, next_high), min(running_low, next_low)
+ 
+    if running_open == 0:
+        running_open = next_open
+
+    if running_FnG == 0:
+        running_FnG = next_FnG
+    else:
+        running_FnG = (running_FnG + next_FnG)/2
 
     # if the next bar's dollar volume would take us over the threshold...
     if dollar_volume + running_volume >= dollar_threshold:
@@ -133,12 +136,12 @@ for i in range(0, len(df)):
         bar_timestamp = next_timestamp + pd.to_timedelta(60, 's')
 
         # add a new dollar bar to the list of dollar bars with the timestamp, running high/low, and next close
-        dollar_bars += [{'timestamp': bar_timestamp, 'high': running_high, 'low': running_low, 'close': next_close}]
+        dollar_bars += [{'tic': next_tic, 'timestamp': bar_timestamp, 'high': running_high, 'low': running_low, 'open': running_open, 'close': next_close, 'fng': running_FnG}]
 
         # reset the running volume to zero
         running_volume = 0
-
-        # reset the running high and low to placeholder values
+        running_FnG = 0
+        running_open = 0
         running_high, running_low = 0, math.inf
 
     # otherwise, increment the running volume
@@ -146,42 +149,30 @@ for i in range(0, len(df)):
         running_volume += dollar_volume
 
 df = pd.DataFrame(dollar_bars)
-df.to_csv('test.csv')
-print("> Storing Raw Historic Data")
-
-def add_feature_columns(df, period_length):
-
+def add_feature_columns(period_length):
     # get the price vs ewma feature
     df[f'feature_PvEWMA_{period_length}'] = df['close']/df['close'].ewm(span=period_length).mean() - 1
-
     # get the price vs cumulative high/low range feature
     df[f'feature_PvCHLR_{period_length}'] = (df['close'] - df['low'].rolling(period_length).min()) / (df['high'].rolling(period_length).max() - df['low'].rolling(period_length).min())
-
     # get the return vs rolling high/low range feature
     df[f'feature_RvRHLR_{period_length}'] = df['close'].pct_change(period_length)/((df['high']/df['low'] - 1).rolling(period_length).mean())
-
     # get the convexity/concavity feature
     df[f'feature_CON_{period_length}'] = (df['close'] + df['close'].shift(period_length))/(2 * df['close'].rolling(period_length+1).mean()) - 1
-
     # get the rolling autocorrelation feature
     df[f'feature_RACORR_{period_length}'] = df['close'].rolling(period_length).apply(lambda x: x.autocorr()).fillna(0)
-
-    # return the bars df with the new feature columns added
-    return df
 
 # for each period length
 for period_length in period_lengths:
     # add the feature columns to the bars df
-    df = add_feature_columns(df, period_length)
-
+    add_feature_columns(period_length)
+    
 # prune the nan rows at the beginning of the dataframe
 df = df[period_lengths[-1]:]
 
 # filter out the high/low/close columns and return 
-df = df[[column for column in df.columns if column not in ['high', 'low', 'close']]]
+#df = df[[column for column in df.columns if column not in ['high', 'low', 'close']]]
 
-print(df)
-
+final_df = pd.DataFrame()
 for i in df.tic.unique():
     #ORIGINAL INDICATORS
     tic_df = df[df.tic == i].copy()
@@ -192,65 +183,64 @@ for i in df.tic.unique():
  
     #OTHERS I ADDED
     #Overlap studies
-    df["rf"] = df["close"].pct_change().shift(-1)
+    tic_df["rf"] = df["close"].pct_change().shift(-1)
 
     tic_df['sar'] = ta.SAR(df['high'], df['low'], acceleration=0., maximum=0.)
 
     # Added momentum indicators
-    df['adx'] = ta.ADX(df['high'], df['low'], df['close'])
-    df['adxr'] = ta.ADXR(df['high'], df['low'], df['close'])
-    df['apo'] = ta.APO(df['close'])
-    df['aroonosc'] = ta.AROONOSC(df['high'], df['low'])
-    df['bop'] = ta.BOP(df['open'], df['high'], df['low'], df['close'])
-    df['cmo'] = ta.CMO(df['close'])
-    df['mfi'] = ta.MFI(df['high'], df['low'], df['close'],df['volume'])
-    df['minus_di'] = ta.MINUS_DI(df['high'], df['low'], df['close'])
-    df['minus_dm'] = ta.MINUS_DM(df['high'], df['low'])
-    df['mom'] = ta.MOM(df['close'])
-    df['plus_di'] = ta.PLUS_DI(df['high'], df['low'], df['close'])
-    df['plus_dm'] = ta.PLUS_DM(df['high'], df['low'])
-    df['ppo_ta'] = ta.PPO(df['close'])
-    df['roc'] = ta.ROC(df['close'])
-    df['rocp'] = ta.ROCP(df['close'])
-    df['rocr'] = ta.ROCR(df['close'])
-    df['rocr100'] = ta.ROCR100(df['close'])
-    df['trix'] = ta.TRIX(df['close'])
-    df['ultosc'] = ta.ULTOSC(df['high'], df['low'], df['close'])
-    df['willr'] = ta.WILLR(df['high'], df['low'], df['close'])
+    tic_df['adx'] = ta.ADX(df['high'], df['low'], df['close'])
+    tic_df['adxr'] = ta.ADXR(df['high'], df['low'], df['close'])
+    tic_df['apo'] = ta.APO(df['close'])
+    tic_df['aroonosc'] = ta.AROONOSC(df['high'], df['low'])
+    tic_df['bop'] = ta.BOP(df['open'], df['high'], df['low'], df['close'])
+    tic_df['cmo'] = ta.CMO(df['close'])
+    tic_df['minus_di'] = ta.MINUS_DI(df['high'], df['low'], df['close'])
+    tic_df['minus_dm'] = ta.MINUS_DM(df['high'], df['low'])
+    tic_df['mom'] = ta.MOM(df['close'])
+    tic_df['plus_di'] = ta.PLUS_DI(df['high'], df['low'], df['close'])
+    tic_df['plus_dm'] = ta.PLUS_DM(df['high'], df['low'])
+    tic_df['ppo_ta'] = ta.PPO(df['close'])
+    tic_df['roc'] = ta.ROC(df['close'])
+    tic_df['rocp'] = ta.ROCP(df['close'])
+    tic_df['rocr'] = ta.ROCR(df['close'])
+    tic_df['rocr100'] = ta.ROCR100(df['close'])
+    tic_df['trix'] = ta.TRIX(df['close'])
+    tic_df['ultosc'] = ta.ULTOSC(df['high'], df['low'], df['close'])
+    tic_df['willr'] = ta.WILLR(df['high'], df['low'], df['close'])
 
     # Cycle indicator functions
-    df['roc'] = ta.HT_DCPERIOD(df['close'])
-    df['ht_dcphase'] = ta.HT_DCPHASE(df['close'])
-    df['ht_sine'], _ = ta.HT_SINE(df['close'])
-    df['ht_trendmode'] = ta.HT_TRENDMODE(df['close'])
+    tic_df['roc'] = ta.HT_DCPERIOD(df['close'])
+    tic_df['ht_dcphase'] = ta.HT_DCPHASE(df['close'])
+    tic_df['ht_sine'], _ = ta.HT_SINE(df['close'])
+    tic_df['ht_trendmode'] = ta.HT_TRENDMODE(df['close'])
 
     final_df = final_df.append(tic_df)
 
+df = final_df
+df.dropna()
 
+processed_df.index=pd.to_datetime(processed_df.time)
+processed_df.drop('time', inplace=True, axis=1)
+print(processed_df.tail(20))
 
+print(df)
+df.to_csv('test.csv')
+print("> Storing Raw Historic Data")
 
-
-
-
-
-
-
-
-
-min_max_scaler = MinMaxScaler()
-for column in df:
-    columnSeriesObj = df[column]
-    if column != 'time':
-        df[column] = min_max_scaler.fit_transform(columnSeriesObj.values.reshape(-1, 1))
-
-testSize = 99.5 #%
-trainData = df.head(int(len(df)*(1 - testSize/100)))
-testData = df.tail(int(len(df)*(testSize/100)))
-
-print(trainData)
-
-output_x = []
-output_y = []
+#min_max_scaler = MinMaxScaler()
+#for column in df:
+#    columnSeriesObj = df[column]
+#    if column != 'time':
+#        df[column] = min_max_scaler.fit_transform(columnSeriesObj.values.reshape(-1, 1))
+#
+#testSize = 99.5 #%
+#trainData = df.head(int(len(df)*(1 - testSize/100)))
+#testData = df.tail(int(len(df)*(testSize/100)))
+#
+#print(trainData)
+#
+#output_x = []
+#output_y = []
 #for i in range(0, len(df) - (window_size + 1)):
 #    print(len(df) - window_size - i)
 #    hour_data = df.iloc[i: (i + (window_size + 1)), :]
