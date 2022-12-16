@@ -39,3 +39,6 @@ vectorbt
 wheel==0.37.1
 wrds==3.1.1
 yfinance==0.1.72
+
+# profiling
+wandb
