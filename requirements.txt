@@ -25,7 +25,7 @@ pre-commit==2.19.0
 
 # testing requirements
 pytest==7.1.2
-ray[default]==1.13.0
+ray==1.13.0
 
 # Model Building Requirements
 scikit-learn==1.1.1
