@@ -11,6 +11,7 @@ import numpy.random as rd
 import os
 
 from copy import deepcopy
+from sklearn import preprocessing
 
 import gym
 import torch
@@ -118,7 +119,7 @@ running_FnG = 0
 running_open = 0
 running_high, running_low = 0, math.inf
 dollar_threshold = 5000000
-period_lengths = [4, 8, 16]#, 32, 64, 128, 256]
+period_lengths = [4, 8, 16, 32, 64, 128, 256]
 
 for i in range(0, len(df)): 
     print(len(df) - i)
@@ -237,40 +238,27 @@ for i in df.tic.unique():
     final_df = final_df.append(tic_df)
 
 df = final_df
-
 df.index=pd.to_datetime(df.time)
 df.drop('time', inplace=True, axis=1)
-df.dropna(inplace=True)
-
-min_max_scaler = MinMaxScaler()
-for column in df:
-    columnSeriesObj = df[column]
-    if column != 'time' and column != 'tic':
-        df[column] = min_max_scaler.fit_transform(columnSeriesObj.values.reshape(-1, 1))
+df = df.dropna()
 
 unique_ticker = df.tic.unique()
-print(unique_ticker)
 
 price_array = np.column_stack([df[df.tic == tic].close for tic in unique_ticker])
-print(price_array)
 
 column_titles = list(df.columns.values)
 column_titles.remove('tic')
 column_titles.remove('close')
 common_tech_indicator_list = [i for i in column_titles if i in df.columns.values.tolist()]
 tech_array = np.hstack([df.loc[(df.tic == tic), common_tech_indicator_list] for tic in unique_ticker])
-print(tech_array)
 
 turbulence_array = np.array([])
 
+min_max_scaler = MinMaxScaler()
+price_array = min_max_scaler.fit_transform(price_array)
+tech_array = min_max_scaler.fit_transform(tech_array)
+
 print("Successfully transformed into array")
-
-
-
-
-
-
-
 
 #MOVING TO TRADING
 class StockTradingEnv(gym.Env):
@@ -290,17 +278,15 @@ class StockTradingEnv(gym.Env):
     ):
         price_ary = config["price_array"]
         tech_ary = config["tech_array"]
-        turbulence_ary = config["turbulence_array"]
+        #turbulence_ary = config["turbulence_array"]
         if_train = config["if_train"]
         self.price_ary = price_ary.astype(np.float32)
         self.tech_ary = tech_ary.astype(np.float32)
-        self.turbulence_ary = turbulence_ary
+        #self.turbulence_ary = turbulence_ary
 
         self.tech_ary = self.tech_ary * 2**-7
-        self.turbulence_bool = (turbulence_ary > turbulence_thresh).astype(np.float32)
-        self.turbulence_ary = (
-            self.sigmoid_sign(turbulence_ary, turbulence_thresh) * 2**-5
-        ).astype(np.float32)
+        #self.turbulence_bool = (turbulence_ary > turbulence_thresh).astype(np.float32)
+        #self.turbulence_ary = (self.sigmoid_sign(turbulence_ary, turbulence_thresh) * 2**-5).astype(np.float32)
 
         stock_dim = self.price_ary.shape[1]
         self.gamma = gamma
@@ -338,12 +324,8 @@ class StockTradingEnv(gym.Env):
         self.target_return = 10.0
         self.episode_return = 0.0
 
-        self.observation_space = gym.spaces.Box(
-            low=-3000, high=3000, shape=(self.state_dim,), dtype=np.float32
-        )
-        self.action_space = gym.spaces.Box(
-            low=-1, high=1, shape=(self.action_dim,), dtype=np.float32
-        )
+        self.observation_space = gym.spaces.Box(low=-3000, high=3000, shape=(self.state_dim,), dtype=np.float32)
+        self.action_space = gym.spaces.Box(low=-1, high=1, shape=(self.action_dim,), dtype=np.float32)
 
     def reset(self):
         self.day = 0
@@ -375,31 +357,31 @@ class StockTradingEnv(gym.Env):
         price = self.price_ary[self.day]
         self.stocks_cool_down += 1
 
-        if self.turbulence_bool[self.day] == 0:
-            min_action = int(self.max_stock * self.min_stock_rate)  # stock_cd
-            for index in np.where(actions < -min_action)[0]:  # sell_index:
-                if price[index] > 0:  # Sell only if current asset is > 0
-                    sell_num_shares = min(self.stocks[index], -actions[index])
-                    self.stocks[index] -= sell_num_shares
-                    self.amount += (
-                        price[index] * sell_num_shares * (1 - self.sell_cost_pct)
-                    )
-                    self.stocks_cool_down[index] = 0
-            for index in np.where(actions > min_action)[0]:  # buy_index:
-                if (
-                    price[index] > 0
-                ):  # Buy only if the price is > 0 (no missing data in this particular date)
-                    buy_num_shares = min(self.amount // price[index], actions[index])
-                    self.stocks[index] += buy_num_shares
-                    self.amount -= (
-                        price[index] * buy_num_shares * (1 + self.buy_cost_pct)
-                    )
-                    self.stocks_cool_down[index] = 0
+        #if self.turbulence_bool[self.day] == 0:
+        min_action = int(self.max_stock * self.min_stock_rate)  # stock_cd
+        for index in np.where(actions < -min_action)[0]:  # sell_index:
+            if price[index] > 0:  # Sell only if current asset is > 0
+                sell_num_shares = min(self.stocks[index], -actions[index])
+                self.stocks[index] -= sell_num_shares
+                self.amount += (
+                    price[index] * sell_num_shares * (1 - self.sell_cost_pct)
+                )
+                self.stocks_cool_down[index] = 0
+        for index in np.where(actions > min_action)[0]:  # buy_index:
+            if (
+                price[index] > 0
+            ):  # Buy only if the price is > 0 (no missing data in this particular date)
+                buy_num_shares = min(self.amount // price[index], actions[index])
+                self.stocks[index] += buy_num_shares
+                self.amount -= (
+                    price[index] * buy_num_shares * (1 + self.buy_cost_pct)
+                )
+                self.stocks_cool_down[index] = 0
 
-        else:  # sell all when turbulence
-            self.amount += (self.stocks * price).sum() * (1 - self.sell_cost_pct)
-            self.stocks[:] = 0
-            self.stocks_cool_down[:] = 0
+        #else:  # sell all when turbulence
+        #    self.amount += (self.stocks * price).sum() * (1 - self.sell_cost_pct)
+        #    self.stocks[:] = 0
+        #    self.stocks_cool_down[:] = 0
 
         state = self.get_state(price)
         total_asset = self.amount + (self.stocks * price).sum()
@@ -420,8 +402,8 @@ class StockTradingEnv(gym.Env):
         return np.hstack(
             (
                 amount,
-                self.turbulence_ary[self.day],
-                self.turbulence_bool[self.day],
+                #self.turbulence_ary[self.day],
+                #self.turbulence_bool[self.day],
                 price * scale,
                 self.stocks * scale,
                 self.stocks_cool_down,
@@ -450,8 +432,20 @@ class ActorPPO(nn.Module):
         action_std = self.action_std_log.exp()
 
         dist = Normal(action_avg, action_std)
+        print(dist)
         action = dist.sample()
+        print(action)
+
         logprob = dist.log_prob(action).sum(1)
+        print(logprob)
+
+
+
+
+
+
+
+
         return action, logprob
 
     def get_logprob_entropy(self, state: Tensor, action: Tensor) -> (Tensor, Tensor):
@@ -726,9 +720,9 @@ def train_agent(args: Config):
     agent.states = env.reset()[np.newaxis, :]
 
     evaluator = Evaluator(eval_env=build_env(args.env_class, args.env_args),
-                          eval_per_step=args.eval_per_step,
-                          eval_times=args.eval_times,
-                          cwd=args.cwd)
+                            eval_per_step=args.eval_per_step,
+                            eval_times=args.eval_times,
+                            cwd=args.cwd)
     torch.set_grad_enabled(False)
     while True: # start training
         buffer_items = agent.explore_env(env, args.horizon_len)
@@ -946,20 +940,7 @@ def train(drl_lib, env, model_name, **kwargs,):
         model = agent.get_model(model_name, model_kwargs=erl_params)
         trained_model = agent.train_model(model=model, cwd=cwd, total_timesteps=break_step)
 
-def test(
-    start_date,
-    end_date,
-    ticker_list,
-    data_source,
-    time_interval,
-    technical_indicator_list,
-    drl_lib,
-    env,
-    model_name,
-    if_vix=True,
-    **kwargs,
-):
-
+def test(start_date,end_date,ticker_list,data_source,time_interval,technical_indicator_list,drl_lib,env,model_name,if_vix=True,**kwargs,):
     # import data processor
     from finrl.meta.data_processor import DataProcessor
 
@@ -1000,14 +981,14 @@ def test(
 
 INDICATORS = list(df.columns.values)
 del INDICATORS[0:5]
-print(INDICATORS)
 
 ticker_list = TICKER_LIST
 action_dim = len(TICKER_LIST)
 state_dim = 1 + 2 + 3 * action_dim + len(INDICATORS) * action_dim
 env = StockTradingEnv
 
-ERL_PARAMS = {"learning_rate": 3e-6,"batch_size": 2048,"gamma":  0.985, "seed":312,"net_dimension":[128,64], "target_step":5000, "eval_gap":30, "eval_times":1} 
+#ERL_PARAMS = {"learning_rate": 3e-6, "batch_size": 2048, "gamma":  0.985, "seed":312, "net_dimension":[128,64], "target_step":5000, "eval_gap":30, "eval_times":1} 
+ERL_PARAMS = {"learning_rate": 3e-6, "batch_size": 2048, "gamma": 0.99, "seed":312, "net_dimension": [128,64],  "target_step": 5000, "eval_gap": 30, "eval_times": 1}
 
 train(
     drl_lib='elegantrl', 
