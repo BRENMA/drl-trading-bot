@@ -39,18 +39,29 @@ print("\n\n\n'88,dPYba,,adPYba,   ,adPPYba,  8b,dPPYba,   ,adPPYba, 8b       d8 
 print("> welcome to moneyDRL")
 print("> Creating Testing Data")
 
-TICKER_LIST = ["BTCUSDT"]#, "ETHUSDT", "ADAUSDT", "ATOMUSDT", "SOLUSDT", "DOTUSDT", "DOGEUSDT", "AVAXUSDT"]
+TICKER_LIST = ["ETHUSDT"]#, "ATOMUSDT", "ADAUSDT", "BTCUSDT", "SOLUSDT", "DOTUSDT", "DOGEUSDT", "AVAXUSDT"]
+INDICATORS = ['open','fng', 'rsi', 'macd', 'macd_signal', 'macd_hist', 'cci', 'dx', 'rf', 'sar', 'adx', 'adxr', 'apo', 'aroonosc', 'bop', 'cmo', 'minus_di', 'minus_dm', 'mom', 'plus_di', 'plus_dm', 'ppo_ta', 'roc', 'rocp', 'rocr', 'rocr100', 'trix', 'ultosc', 'willr', 'ht_dcphase', 'ht_sine', 'ht_trendmode', 'feature_PvEWMA_4', 'feature_PvCHLR_4', 'feature_RvRHLR_4', 'feature_CON_4', 'feature_RACORR_4', 'feature_PvEWMA_8', 'feature_PvCHLR_8', 'feature_RvRHLR_8', 'feature_CON_8', 'feature_RACORR_8', 'feature_PvEWMA_16', 'feature_PvCHLR_16', 'feature_RvRHLR_16', 'feature_CON_16', 'feature_RACORR_16', 'feature_PvEWMA_32', 'feature_PvCHLR_32', 'feature_RvRHLR_32', 'feature_CON_32', 'feature_RACORR_32', 'feature_PvEWMA_64', 'feature_PvCHLR_64', 'feature_RvRHLR_64', 'feature_CON_64', 'feature_RACORR_64', 'feature_PvEWMA_128', 'feature_PvCHLR_128', 'feature_RvRHLR_128', 'feature_CON_128', 'feature_RACORR_128', 'feature_PvEWMA_256', 'feature_PvCHLR_256', 'feature_RvRHLR_256', 'feature_CON_256', 'feature_RACORR_256']
+period_lengths = [4, 8, 16, 32, 64, 128, 256]
 
 TIME_INTERVAL = '1m'
-TRAIN_START_DATE = '2022-08-25'
-#TRAIN_END_DATE= '2019-08-01'
-#TRADE_START_DATE = '2019-08-01'
-TRADE_END_DATE = '2022-08-31'
+TRAIN_START_DATE = '2020-07-01'
+TRAIN_END_DATE= '2020-08-01'
 
-p = DataProcessor(data_source='binance', start_date=TRAIN_START_DATE, end_date=TRADE_END_DATE, time_interval=TIME_INTERVAL)
+TEST_START_DATE = '2021-07-01'
+TEST_END_DATE = '2021-08-01'
+
+p = DataProcessor(data_source='binance', start_date=TRAIN_START_DATE, end_date=TRAIN_END_DATE, time_interval=TIME_INTERVAL)
 p.download_data(TICKER_LIST)
 p.clean_data()
 df = p.dataframe
+
+t = DataProcessor(data_source='binance', start_date=TEST_START_DATE, end_date=TEST_END_DATE, time_interval=TIME_INTERVAL)
+t.download_data(TICKER_LIST)
+t.clean_data()
+df_TEST = t.dataframe
+
+print(len(df))
+print(len(df_TEST))
 
 #df = df[df['tic'] == 'BTCUSDT'].copy()
 #df_ETHUSDT = df[df['tic'] == 'ETHUSDT'].copy()
@@ -69,110 +80,114 @@ df = p.dataframe
 #price_array = np.column_stack([df[df.tic == tic].close for tic in unique_ticker])
 #print(price_array)
 
-#BASING EVERYTHING OFF THE BTC DATAFRAME
-df.reset_index(drop=True, inplace=True)
+def addFnG(df):
+    #BASING EVERYTHING OFF THE BTC DATAFRAME
+    df.reset_index(drop=True, inplace=True)
+    print(df.head())
 
-print(df.head())
+    #add FNG index
+    url = "https://api.alternative.me/fng/?limit=0"
+    response = requests.request("GET", url)
+    dataRes = response.json()
+    dfFnG = pd.json_normalize(dataRes['data'])
+    del dfFnG['value_classification']
+    del dfFnG['time_until_update']
+    dfFnG = dfFnG.iloc[::-1]
 
-#add FNG index
-url = "https://api.alternative.me/fng/?limit=0"
-response = requests.request("GET", url)
-dataRes = response.json()
-dfFnG = pd.json_normalize(dataRes['data'])
-del dfFnG['value_classification']
-del dfFnG['time_until_update']
-dfFnG = dfFnG.iloc[::-1]
+    FnGArr = list(dfFnG.timestamp)
+    target = df.iloc[0:1440]["time"].to_list()
+    FnGStartPoint = 0
 
-FnGArr = list(dfFnG.timestamp)
-target = df.iloc[0:1440]["time"].to_list()
-FnGStartPoint = 0
+    for n in range(len(target)):
+        if FnGStartPoint == 0:
+            for i in range(len(FnGArr)):
+                if (int(FnGArr[i]) == time.mktime(datetime.strptime(target[n], '%Y-%m-%d %H:%M:%S').timetuple())):
+                    FnGStartPoint = i
+        else:
+            print("start point found")
+            break
 
-for n in range(len(target)):
-    if FnGStartPoint == 0:
-        for i in range(len(FnGArr)):
-            if (int(FnGArr[i]) == time.mktime(datetime.strptime(target[n], '%Y-%m-%d %H:%M:%S').timetuple())):
-                FnGStartPoint = i
-    else:
-        print("start point found")
-        break
+    DFStartIndex = df[df['time']== datetime.fromtimestamp(int(FnGArr[FnGStartPoint])).strftime('%Y-%m-%d %H:%M:%S')].index[0]
+    df = df.iloc[DFStartIndex:]
 
-DFStartIndex = df[df['time']== datetime.fromtimestamp(int(FnGArr[FnGStartPoint])).strftime('%Y-%m-%d %H:%M:%S')].index[0]
-df = df.iloc[DFStartIndex:]
+    FnGIndArr = []
+    for i in range(len(df)):
+        print(len(df) - i)
 
-FnGIndArr = []
-for i in range(len(df)):
-    print(len(df) - i)
+        dfUnixTime = int(time.mktime(datetime.strptime(df.iloc[i]['time'],"%Y-%m-%d %H:%M:%S").timetuple()))
 
-    dfUnixTime = int(time.mktime(datetime.strptime(df.iloc[i]['time'],"%Y-%m-%d %H:%M:%S").timetuple()))
+        if dfUnixTime >= int(dfFnG.iloc[FnGStartPoint + 1]['timestamp']):
+            FnGStartPoint += 1
 
-    if dfUnixTime >= int(dfFnG.iloc[FnGStartPoint + 1]['timestamp']):
-        FnGStartPoint += 1
+        FnGIndArr.append(int(dfFnG.iloc[FnGStartPoint]['value']))
 
-    FnGIndArr.append(int(dfFnG.iloc[FnGStartPoint]['value']))
+    df.insert(0, "fngindex", FnGIndArr, True)
 
-df.insert(0, "fngindex", FnGIndArr, True)
+    print("getting dollar bars")
+    dollar_bars = []
+    running_volume = 0
+    running_FnG = 0
+    running_open = 0
+    running_high, running_low = 0, math.inf
+    dollar_threshold = 1000000
 
-print("getting dollar bars")
-dollar_bars = []
-running_volume = 0
-running_FnG = 0
-running_open = 0
-running_high, running_low = 0, math.inf
-dollar_threshold = 5000000
-period_lengths = [4, 8, 16, 32, 64, 128, 256]
+    for i in range(0, len(df)): 
+        print(len(df) - i)
+        
+        next_timestamp, next_open, next_high, next_low, next_close, next_volume, next_FnG, next_tic = [df.iloc[i][k] for k in ['time', 'open', 'high', 'low', 'close', 'volume', 'fngindex', 'tic']]
+        next_timestamp = pd.to_datetime(next_timestamp)
 
-for i in range(0, len(df)): 
-    print(len(df) - i)
+        # get the midpoint price of the next bar (the average of the open and the close)
+        midpoint_price = (next_open + next_close)/2
+
+        # get the approximate dollar volume of the bar using the volume and the midpoint price
+        dollar_volume = next_volume * midpoint_price
+
+        running_high, running_low = max(running_high, next_high), min(running_low, next_low)
     
-    next_timestamp, next_open, next_high, next_low, next_close, next_volume, next_FnG, next_tic = [df.iloc[i][k] for k in ['time', 'open', 'high', 'low', 'close', 'volume', 'fngindex', 'tic']]
-    next_timestamp = pd.to_datetime(next_timestamp)
+        if running_open == 0:
+            running_open = next_open
 
-    # get the midpoint price of the next bar (the average of the open and the close)
-    midpoint_price = (next_open + next_close)/2
+        if running_FnG == 0:
+            running_FnG = next_FnG
+        else:
+            running_FnG = (running_FnG + next_FnG)/2
 
-    # get the approximate dollar volume of the bar using the volume and the midpoint price
-    dollar_volume = next_volume * midpoint_price
+        # if the next bar's dollar volume would take us over the threshold...
+        if dollar_volume + running_volume >= dollar_threshold:
 
-    running_high, running_low = max(running_high, next_high), min(running_low, next_low)
- 
-    if running_open == 0:
-        running_open = next_open
+            # set the timestamp for the dollar bar as the timestamp at which the bar closed (i.e. one minute after the timestamp of the last minutely bar included in the dollar bar)
+            bar_timestamp = next_timestamp + pd.to_timedelta(60, 's')
 
-    if running_FnG == 0:
-        running_FnG = next_FnG
-    else:
-        running_FnG = (running_FnG + next_FnG)/2
+            # add a new dollar bar to the list of dollar bars with the timestamp, running high/low, and next close
+            dollar_bars += [{'tic': next_tic, 'time': bar_timestamp, 'high': running_high, 'low': running_low, 'open': running_open, 'close': next_close, 'fng': running_FnG}]
 
-    # if the next bar's dollar volume would take us over the threshold...
-    if dollar_volume + running_volume >= dollar_threshold:
+            # reset the running volume to zero
+            running_volume = 0
+            running_FnG = 0
+            running_open = 0
+            running_high, running_low = 0, math.inf
 
-        # set the timestamp for the dollar bar as the timestamp at which the bar closed (i.e. one minute after the timestamp of the last minutely bar included in the dollar bar)
-        bar_timestamp = next_timestamp + pd.to_timedelta(60, 's')
+        # otherwise, increment the running volume
+        else:
+            running_volume += dollar_volume
 
-        # add a new dollar bar to the list of dollar bars with the timestamp, running high/low, and next close
-        dollar_bars += [{'tic': next_tic, 'time': bar_timestamp, 'high': running_high, 'low': running_low, 'open': running_open, 'close': next_close, 'fng': running_FnG}]
+    df = pd.DataFrame(dollar_bars)
+    # prune the nan rows at the beginning of the dataframe
+    df = df[period_lengths[-1]:]
 
-        # reset the running volume to zero
-        running_volume = 0
-        running_FnG = 0
-        running_open = 0
-        running_high, running_low = 0, math.inf
+    #ADDING THE REST OF THE TOKENS
+    #for df_temp in df_AFTER_BTC_LIST:
+    #    print(df_temp)
+    #    print(df)
+    #    mergedDf = df_temp[df_temp['time'].isin(df['time'])]
+    #    print(mergedDf)
+    #    aaaaaaaaaaaaaaaaaa
 
-    # otherwise, increment the running volume
-    else:
-        running_volume += dollar_volume
+    return df
 
-df = pd.DataFrame(dollar_bars)
-# prune the nan rows at the beginning of the dataframe
-df = df[period_lengths[-1]:]
-
-#ADDING THE REST OF THE TOKENS
-#for df_temp in df_AFTER_BTC_LIST:
-#    print(df_temp)
-#    print(df)
-#    mergedDf = df_temp[df_temp['time'].isin(df['time'])]
-#    print(mergedDf)
-#    aaaaaaaaaaaaaaaaaa
+df = addFnG(df = df)
+df_TEST = addFnG(df = df_TEST)
 
 def add_feature_columns(df, period_length):
     # get the price vs ewma feature
@@ -186,79 +201,140 @@ def add_feature_columns(df, period_length):
     # get the rolling autocorrelation feature
     df[f'feature_RACORR_{period_length}'] = df['close'].rolling(period_length).apply(lambda x: x.autocorr()).fillna(0)
 
-final_df = pd.DataFrame()
-for i in df.tic.unique():
-    #ORIGINAL INDICATORS
-    tic_df = df[df.tic == i].copy()
-    tic_df['rsi'] = RSI(tic_df['close'], timeperiod=14)
-    tic_df['macd'], tic_df['macd_signal'], tic_df['macd_hist'] = MACD(tic_df['close'], fastperiod=12, slowperiod=26, signalperiod=9)
-    tic_df['cci'] = CCI(tic_df['high'], tic_df['low'], tic_df['close'], timeperiod=14)
-    tic_df['dx'] = DX(tic_df['high'], tic_df['low'], tic_df['close'], timeperiod=14)
- 
-    #OTHERS I ADDED
-    #Overlap studies
-    tic_df["rf"] = df["close"].pct_change().shift(-1)
-    tic_df['sar'] = ta.SAR(df['high'], df['low'], acceleration=0., maximum=0.)
+def addIndicators(df):
+    final_df = pd.DataFrame()
+    for i in df.tic.unique():
+        #ORIGINAL INDICATORS
+        tic_df = df[df.tic == i].copy()
+        tic_df['rsi'] = RSI(tic_df['close'], timeperiod=14)
+        tic_df['macd'], tic_df['macd_signal'], tic_df['macd_hist'] = MACD(tic_df['close'], fastperiod=12, slowperiod=26, signalperiod=9)
+        tic_df['cci'] = CCI(tic_df['high'], tic_df['low'], tic_df['close'], timeperiod=14)
+        tic_df['dx'] = DX(tic_df['high'], tic_df['low'], tic_df['close'], timeperiod=14)
+    
+        #OTHERS I ADDED
+        #Overlap studies
+        tic_df["rf"] = df["close"].pct_change().shift(-1)
+        tic_df['sar'] = ta.SAR(df['high'], df['low'], acceleration=0., maximum=0.)
 
-    # Added momentum indicators
-    tic_df['adx'] = ta.ADX(df['high'], df['low'], df['close'])
-    tic_df['adxr'] = ta.ADXR(df['high'], df['low'], df['close'])
-    tic_df['apo'] = ta.APO(df['close'])
-    tic_df['aroonosc'] = ta.AROONOSC(df['high'], df['low'])
-    tic_df['bop'] = ta.BOP(df['open'], df['high'], df['low'], df['close'])
-    tic_df['cmo'] = ta.CMO(df['close'])
-    tic_df['minus_di'] = ta.MINUS_DI(df['high'], df['low'], df['close'])
-    tic_df['minus_dm'] = ta.MINUS_DM(df['high'], df['low'])
-    tic_df['mom'] = ta.MOM(df['close'])
-    tic_df['plus_di'] = ta.PLUS_DI(df['high'], df['low'], df['close'])
-    tic_df['plus_dm'] = ta.PLUS_DM(df['high'], df['low'])
-    tic_df['ppo_ta'] = ta.PPO(df['close'])
-    tic_df['roc'] = ta.ROC(df['close'])
-    tic_df['rocp'] = ta.ROCP(df['close'])
-    tic_df['rocr'] = ta.ROCR(df['close'])
-    tic_df['rocr100'] = ta.ROCR100(df['close'])
-    tic_df['trix'] = ta.TRIX(df['close'])
-    tic_df['ultosc'] = ta.ULTOSC(df['high'], df['low'], df['close'])
-    tic_df['willr'] = ta.WILLR(df['high'], df['low'], df['close'])
+        # Added momentum indicators
+        tic_df['adx'] = ta.ADX(df['high'], df['low'], df['close'])
+        tic_df['adxr'] = ta.ADXR(df['high'], df['low'], df['close'])
+        tic_df['apo'] = ta.APO(df['close'])
+        tic_df['aroonosc'] = ta.AROONOSC(df['high'], df['low'])
+        tic_df['bop'] = ta.BOP(df['open'], df['high'], df['low'], df['close'])
+        tic_df['cmo'] = ta.CMO(df['close'])
+        tic_df['minus_di'] = ta.MINUS_DI(df['high'], df['low'], df['close'])
+        tic_df['minus_dm'] = ta.MINUS_DM(df['high'], df['low'])
+        tic_df['mom'] = ta.MOM(df['close'])
+        tic_df['plus_di'] = ta.PLUS_DI(df['high'], df['low'], df['close'])
+        tic_df['plus_dm'] = ta.PLUS_DM(df['high'], df['low'])
+        tic_df['ppo_ta'] = ta.PPO(df['close'])
+        tic_df['roc'] = ta.ROC(df['close'])
+        tic_df['rocp'] = ta.ROCP(df['close'])
+        tic_df['rocr'] = ta.ROCR(df['close'])
+        tic_df['rocr100'] = ta.ROCR100(df['close'])
+        tic_df['trix'] = ta.TRIX(df['close'])
+        tic_df['ultosc'] = ta.ULTOSC(df['high'], df['low'], df['close'])
+        tic_df['willr'] = ta.WILLR(df['high'], df['low'], df['close'])
 
-    # Cycle indicator functions
-    tic_df['roc'] = ta.HT_DCPERIOD(df['close'])
-    tic_df['ht_dcphase'] = ta.HT_DCPHASE(df['close'])
-    tic_df['ht_sine'], _ = ta.HT_SINE(df['close'])
-    tic_df['ht_trendmode'] = ta.HT_TRENDMODE(df['close'])
+        # Cycle indicator functions
+        tic_df['roc'] = ta.HT_DCPERIOD(df['close'])
+        tic_df['ht_dcphase'] = ta.HT_DCPHASE(df['close'])
+        tic_df['ht_sine'], _ = ta.HT_SINE(df['close'])
+        tic_df['ht_trendmode'] = ta.HT_TRENDMODE(df['close'])
 
-    # for each period length
-    for period_length in period_lengths:
-        # add the feature columns to the bars df
-        add_feature_columns(tic_df, period_length)
+        # for each period length
+        for period_length in period_lengths:
+            # add the feature columns to the bars df
+            add_feature_columns(tic_df, period_length)
 
-    # prune the nan rows at the beginning of the dataframe
-    df = df[period_lengths[-1]:]
+        # prune the nan rows at the beginning of the dataframe
+        tic_df = tic_df.dropna()
+        tic_df = tic_df[[column for column in tic_df.columns if column not in ['high', 'low']]]
 
-    final_df = final_df.append(tic_df)
+        final_df = final_df.append(tic_df)
 
-df = final_df
-df.index=pd.to_datetime(df.time)
-df.drop('time', inplace=True, axis=1)
-df = df.dropna()
+    df = final_df
+    df.index=pd.to_datetime(df.time)
+    df.drop('time', inplace=True, axis=1)
+    df = df.dropna()
+    return df
 
-unique_ticker = df.tic.unique()
+df = addIndicators(df = df)
+df_TEST = addIndicators(df = df_TEST)
 
-price_array = np.column_stack([df[df.tic == tic].close for tic in unique_ticker])
+print(list(df.columns.values))
+print(list(df_TEST.columns.values))
 
-column_titles = list(df.columns.values)
-column_titles.remove('tic')
-column_titles.remove('close')
-common_tech_indicator_list = [i for i in column_titles if i in df.columns.values.tolist()]
-tech_array = np.hstack([df.loc[(df.tic == tic), common_tech_indicator_list] for tic in unique_ticker])
+def splitIntoArr(df): 
+    unique_ticker = df.tic.unique()
+    price_array = np.column_stack([df[df.tic == tic].close for tic in unique_ticker])
 
-turbulence_array = np.array([])
+    #column_titles = list(df.columns.values)
+    #column_titles.remove('tic')
+    #column_titles.remove('close')
+    #common_tech_indicator_list = [i for i in column_titles if i in df.columns.values.tolist()]
+    tech_array = np.hstack([df.loc[(df.tic == tic), INDICATORS] for tic in unique_ticker])
 
-min_max_scaler = MinMaxScaler()
-price_array = min_max_scaler.fit_transform(price_array)
-tech_array = min_max_scaler.fit_transform(tech_array)
+    turbulence_array = np.array([])
 
+    min_max_scaler = MinMaxScaler()
+    price_array = min_max_scaler.fit_transform(price_array)
+    tech_array = min_max_scaler.fit_transform(tech_array)
+
+    return price_array, tech_array, turbulence_array
+
+price_array, tech_array, turbulence_array = splitIntoArr(df = df)
+price_array_TEST, tech_array_TEST, turbulence_array_TEST = splitIntoArr(df = df_TEST)
 print("Successfully transformed into array")
+
+print(len(price_array))
+print(len(price_array_TEST))
+
+print(tech_array.shape)
+print(tech_array_TEST.shape)
+
+#CONFIG
+class Config:
+    def __init__(self, agent_class=None, env_class=None, env_args=None):
+        self.env_class = env_class  # env = env_class(**env_args)
+        self.env_args = env_args  # env = env_class(**env_args)
+
+        if env_args is None:  # dummy env_args
+            env_args = {'env_name': None, 'state_dim': None, 'action_dim': None, 'if_discrete': None}
+        self.env_name = env_args['env_name']  # the name of environment. Be used to set 'cwd'.
+        self.action_dim = len(TICKER_LIST)
+        self.state_dim = 1 + len(INDICATORS) * self.action_dim
+        #self.state_dim = env_args['state_dim']  # vector dimension (feature number) of state
+        #self.action_dim = env_args['action_dim']  # vector dimension (feature number) of action
+        self.if_discrete = env_args['if_discrete']  # discrete or continuous action space
+
+        self.agent_class = agent_class  # agent = agent_class(...)
+
+        '''Arguments for reward shaping'''
+        self.gamma = 0.99  # discount factor of future rewards
+        self.reward_scale = 1.0  # an approximate target reward usually be closed to 256
+
+        '''Arguments for training'''
+        self.gpu_id = int(0)  # `int` means the ID of single GPU, -1 means CPU
+        self.net_dims = (64, 32)  # the middle layer dimension of MLP (MultiLayer Perceptron)
+        self.learning_rate = 6e-5  # 2 ** -14 ~= 6e-5
+        self.soft_update_tau = 5e-3  # 2 ** -8 ~= 5e-3
+        self.batch_size = int(128)  # num of transitions sampled from replay buffer.
+        self.horizon_len = int(2000)  # collect horizon_len step while exploring, then update network
+        self.buffer_size = None  # ReplayBuffer size. Empty the ReplayBuffer for on-policy.
+        self.repeat_times = 8.0  # repeatedly update network using ReplayBuffer to keep critic's loss small
+
+        '''Arguments for evaluate'''
+        self.cwd = None  # current working directory to save model. None means set automatically
+        self.break_step = +np.inf  # break training if 'total_step > break_step'
+        self.eval_times = int(32)  # number of times that get episodic cumulative return
+        self.eval_per_step = int(2e4)  # evaluate the agent per training steps
+
+    def init_before_training(self):
+        if self.cwd is None:  # set cwd (current working directory) for saving model
+            self.cwd = f'./{self.env_name}_{self.agent_class.__name__[5:]}'
+        os.makedirs(self.cwd, exist_ok=True)
 
 #MOVING TO TRADING
 class StockTradingEnv(gym.Env):
@@ -432,19 +508,8 @@ class ActorPPO(nn.Module):
         action_std = self.action_std_log.exp()
 
         dist = Normal(action_avg, action_std)
-        print(dist)
         action = dist.sample()
-        print(action)
-
         logprob = dist.log_prob(action).sum(1)
-        print(logprob)
-
-
-
-
-
-
-
 
         return action, logprob
 
@@ -475,45 +540,6 @@ def build_mlp(dims: [int]) -> nn.Sequential:  # MLP (MultiLayer Perceptron)
         net_list.extend([nn.Linear(dims[i], dims[i + 1]), nn.ReLU()])
     del net_list[-1]  # remove the activation of output layer
     return nn.Sequential(*net_list)
-
-class Config:
-    def __init__(self, agent_class=None, env_class=None, env_args=None):
-        self.env_class = env_class  # env = env_class(**env_args)
-        self.env_args = env_args  # env = env_class(**env_args)
-
-        if env_args is None:  # dummy env_args
-            env_args = {'env_name': None, 'state_dim': None, 'action_dim': None, 'if_discrete': None}
-        self.env_name = env_args['env_name']  # the name of environment. Be used to set 'cwd'.
-        self.state_dim = env_args['state_dim']  # vector dimension (feature number) of state
-        self.action_dim = env_args['action_dim']  # vector dimension (feature number) of action
-        self.if_discrete = env_args['if_discrete']  # discrete or continuous action space
-
-        self.agent_class = agent_class  # agent = agent_class(...)
-
-        '''Arguments for reward shaping'''
-        self.gamma = 0.99  # discount factor of future rewards
-        self.reward_scale = 1.0  # an approximate target reward usually be closed to 256
-
-        '''Arguments for training'''
-        self.gpu_id = int(0)  # `int` means the ID of single GPU, -1 means CPU
-        self.net_dims = (64, 32)  # the middle layer dimension of MLP (MultiLayer Perceptron)
-        self.learning_rate = 6e-5  # 2 ** -14 ~= 6e-5
-        self.soft_update_tau = 5e-3  # 2 ** -8 ~= 5e-3
-        self.batch_size = int(128)  # num of transitions sampled from replay buffer.
-        self.horizon_len = int(2000)  # collect horizon_len step while exploring, then update network
-        self.buffer_size = None  # ReplayBuffer size. Empty the ReplayBuffer for on-policy.
-        self.repeat_times = 8.0  # repeatedly update network using ReplayBuffer to keep critic's loss small
-
-        '''Arguments for evaluate'''
-        self.cwd = None  # current working directory to save model. None means set automatically
-        self.break_step = +np.inf  # break training if 'total_step > break_step'
-        self.eval_times = int(32)  # number of times that get episodic cumulative return
-        self.eval_per_step = int(2e4)  # evaluate the agent per training steps
-
-    def init_before_training(self):
-        if self.cwd is None:  # set cwd (current working directory) for saving model
-            self.cwd = f'./{self.env_name}_{self.agent_class.__name__[5:]}'
-        os.makedirs(self.cwd, exist_ok=True)
 
 def get_gym_env_args(env, if_print: bool) -> dict:
     if {'unwrapped', 'observation_space', 'action_space', 'spec'}.issubset(dir(env)):  # isinstance(env, gym.Env):
@@ -843,11 +869,13 @@ class DRLAgent:
             "if_train": True,
         }
         environment = self.env(config=env_config)
-        env_args = {'config': env_config,
-              'env_name': environment.env_name,
-              'state_dim': environment.state_dim,
-              'action_dim': environment.action_dim,
-              'if_discrete': False}
+        env_args = {
+                'config': env_config,
+                'env_name': environment.env_name,
+                'state_dim': environment.state_dim,
+                'action_dim': environment.action_dim,
+                'if_discrete': False
+            }
         agent = MODELS[model_name]
         if model_name not in MODELS:
             raise NotImplementedError("NotImplementedError")
@@ -922,6 +950,10 @@ class DRLAgent:
         print("episode_return", episode_return)
         return episode_total_assets
 
+env = StockTradingEnv
+ERL_PARAMS = {"learning_rate": 3e-6, "batch_size": 2048, "gamma": 0.99, "seed":312, "net_dimension": [128,64],  "target_step": 5000, "eval_gap": 30, "eval_times": 1}
+
+#training
 def train(drl_lib, env, model_name, **kwargs,):
     # read parameters
     cwd = kwargs.get("cwd", "./" + str(model_name))
@@ -931,41 +963,21 @@ def train(drl_lib, env, model_name, **kwargs,):
         DRLAgent_erl = DRLAgent
         break_step = kwargs.get("break_step", 1e6)
         erl_params = kwargs.get("erl_params")
-        agent = DRLAgent_erl(
-            env=env,
-            price_array=price_array,
-            tech_array=tech_array,
-            turbulence_array=turbulence_array,
-        )
+        agent = DRLAgent_erl(env=env,price_array=price_array,tech_array=tech_array,turbulence_array=turbulence_array,)
         model = agent.get_model(model_name, model_kwargs=erl_params)
         trained_model = agent.train_model(model=model, cwd=cwd, total_timesteps=break_step)
+train(drl_lib='elegantrl', env=env,price_array = price_array, tech_array = tech_array, turbulence_array = turbulence_array,model_name='ppo',erl_params=ERL_PARAMS,cwd='./test_ppo',break_step=1e5)
 
-def test(start_date,end_date,ticker_list,data_source,time_interval,technical_indicator_list,drl_lib,env,model_name,if_vix=True,**kwargs,):
-    # import data processor
-    from finrl.meta.data_processor import DataProcessor
-
-    # fetch data
-    dp = DataProcessor(data_source, **kwargs)
-    data = dp.download_data(ticker_list, start_date, end_date, time_interval)
-    data = dp.clean_data(data)
-    data = dp.add_technical_indicator(data, technical_indicator_list)
-
-    if if_vix:
-        data = dp.add_vix(data)
-    else:
-        data = dp.add_turbulence(data)
-    price_array, tech_array, turbulence_array = dp.df_to_array(data, if_vix)
-
+#testing
+def test(drl_lib, env, model_name, net_dimension, **kwargs,):
     env_config = {
-        "price_array": price_array,
-        "tech_array": tech_array,
-        "turbulence_array": turbulence_array,
+        "price_array": price_array_TEST,
+        "tech_array": tech_array_TEST,
+        "turbulence_array": turbulence_array_TEST,
         "if_train": False,
     }
     env_instance = env(config=env_config)
 
-    # load elegantrl needs state dim, action dim and net dim
-    net_dimension = kwargs.get("net_dimension", 2**7)
     cwd = kwargs.get("cwd", "./" + str(model_name))
     print("price_array: ", len(price_array))
 
@@ -978,26 +990,5 @@ def test(start_date,end_date,ticker_list,data_source,time_interval,technical_ind
             environment=env_instance,
         )
         return episode_total_assets
-
-INDICATORS = list(df.columns.values)
-del INDICATORS[0:5]
-
-ticker_list = TICKER_LIST
-action_dim = len(TICKER_LIST)
-state_dim = 1 + 2 + 3 * action_dim + len(INDICATORS) * action_dim
-env = StockTradingEnv
-
-#ERL_PARAMS = {"learning_rate": 3e-6, "batch_size": 2048, "gamma":  0.985, "seed":312, "net_dimension":[128,64], "target_step":5000, "eval_gap":30, "eval_times":1} 
-ERL_PARAMS = {"learning_rate": 3e-6, "batch_size": 2048, "gamma": 0.99, "seed":312, "net_dimension": [128,64],  "target_step": 5000, "eval_gap": 30, "eval_times": 1}
-
-train(
-    drl_lib='elegantrl', 
-    env=env,
-    price_array = price_array, 
-    tech_array = tech_array, 
-    turbulence_array = turbulence_array,
-    model_name='ppo',
-    erl_params=ERL_PARAMS,
-    cwd='./test_ppo', #current_working_dir
-    break_step=1e5
-)
+account_value_erl = test (drl_lib='elegantrl', env=env, model_name='ppo', cwd='./test_ppo', net_dimension = [128,64])
+print(account_value_erl)
