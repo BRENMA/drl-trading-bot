@@ -1,0 +1,103 @@
+f4fc889
+
+commit f4fc88910922a5a1e8d2980b1cc221987c0488d4
+Author: Brent Matterson <brentmatterson@gmail.com>
+Date:   Tue Dec 27 10:03:37 2022 -0800
+
+    save before pivot
+
+ CRYPTOTRADING.py | 511 +++++++++++++++++++++++++++----------------------------
+ 1 file changed, 251 insertions(+), 260 deletions(-)
+
+commit dae82e347daf932b1fe6fa5a104aa2dfee3ad408
+Author: Brent Matterson <brentmatterson@gmail.com>
+Date:   Thu Dec 22 14:37:33 2022 -0800
+
+    error with multiplication
+
+ CRYPTOTRADING.py | 135 ++++++++++++++++++++++++-------------------------------
+ 1 file changed, 58 insertions(+), 77 deletions(-)
+
+commit 78ff1793736902e931ef45c27797bcc8c6d6c449
+Author: Brent Matterson <brentmatterson@gmail.com>
+Date:   Sun Dec 18 22:57:40 2022 -0800
+
+    fixed env
+
+ CRYPTOTRADING.py | 243 ++++++++++++++++++++++++++++++++++++++++---------------
+ 1 file changed, 178 insertions(+), 65 deletions(-)
+
+commit 1dc298b36d69bfa8c8a26832e223ef02d835beb6
+Author: Brent Matterson <brentmatterson@gmail.com>
+Date:   Sun Dec 18 21:43:29 2022 -0800
+
+    working on model
+
+ finrl/meta/preprocessor/tusharedownloader.py | 117 +++++++++++++++++++++++++++
+ 1 file changed, 117 insertions(+)
+
+commit 0eb8eebad5409858e16f92507f53ba280cd4f638
+Author: Brent Matterson <brentmatterson@gmail.com>
+Date:   Sun Dec 18 21:42:20 2022 -0800
+
+    adding finrl folder
+
+ CRYPTOTRADING.py                                   |  668 ++++-
+ FinRL_MultiCrypto_Trading.ipynb                    | 2976 ++++++++++++++++++++
+ ...BTCUSDT_binance_2022-08-25_2022-08-31_1m.pickle |  Bin 0 -> 692151 bytes
+ finrl/README.md                                    |   35 +
+ finrl/__init__.py                                  |    5 +
+ finrl/__main__.py                                  |    6 +
+ finrl/agents/__init__.py                           |    0
+ finrl/agents/elegantrl/__init__.py                 |    0
+ finrl/agents/elegantrl/models.py                   |  131 +
+ finrl/agents/rllib/__init__.py                     |    0
+ finrl/agents/rllib/models.py                       |  183 ++
+ finrl/agents/stablebaselines3/__init__.py          |    0
+ finrl/agents/stablebaselines3/hyperparams_opt.py   |  625 ++++
+ finrl/agents/stablebaselines3/models.py            |  704 +++++
+ finrl/agents/stablebaselines3/tune_sb3.py          |  201 ++
+ finrl/applications/__init__.py                     |    0
+ .../cryptocurrency_trading/__init__.py             |    0
+ .../applications/cryptocurrency_trading/actor.pth  |  Bin 0 -> 74919 bytes
+ .../cryptocurrency_trading/recorder.npy            |  Bin 0 -> 272 bytes
+ .../high_frequency_trading/__init__.py             |    0
+ .../applications/high_frequency_trading/actor.pth  |  Bin 0 -> 2788919 bytes
+ .../high_frequency_trading/recorder.npy            |  Bin 0 -> 848 bytes
+ .../applications/portfolio_allocation/__init__.py  |    0
+ finrl/applications/stock_trading/__init__.py       |    0
+ finrl/config.py                                    |   76 +
+ finrl/config_tickers.py                            | 1432 ++++++++++
+ finrl/main.py                                      |  149 +
+ finrl/meta/__init__.py                             |    0
+ finrl/meta/data_processor.py                       |   77 +
+ finrl/meta/data_processors/__init__.py             |    0
+ finrl/meta/data_processors/func.py                 |   66 +
+ finrl/meta/data_processors/processor_alpaca.py     |  388 +++
+ finrl/meta/data_processors/processor_ccxt.py       |  146 +
+ finrl/meta/data_processors/processor_joinquant.py  |  126 +
+ .../meta/data_processors/processor_quantconnect.py |   28 +
+ finrl/meta/data_processors/processor_wrds.py       |  334 +++
+ .../meta/data_processors/processor_yahoofinance.py |  496 ++++
+ finrl/meta/env_cryptocurrency_trading/__init__.py  |    0
+ .../env_cryptocurrency_trading/env_btc_ccxt.py     |  215 ++
+ .../env_multiple_crypto.py                         |  116 +
+ finrl/meta/env_portfolio_allocation/__init__.py    |    0
+ .../meta/env_portfolio_allocation/env_portfolio.py |  261 ++
+ finrl/meta/env_stock_trading/__init__.py           |    0
+ finrl/meta/env_stock_trading/env_nas100_wrds.py    |  237 ++
+ .../env_stock_trading/env_stock_papertrading.py    |  409 +++
+ finrl/meta/env_stock_trading/env_stocktrading.py   |  552 ++++
+ .../env_stocktrading_cashpenalty.py                |  409 +++
+ .../meta/env_stock_trading/env_stocktrading_np.py  |  169 ++
+ .../env_stock_trading/env_stocktrading_stoploss.py |  479 ++++
+ finrl/meta/meta_config.py                          |  668 +++++
+ finrl/meta/preprocessor/__init__.py                |    0
+ finrl/meta/preprocessor/preprocessors.py           |  267 ++
+ finrl/meta/preprocessor/yahoodownloader.py         |   98 +
+ finrl/plot.py                                      |  120 +
+ finrl/test.py                                      |  138 +
+ finrl/trade.py                                     |   78 +
+ finrl/train.py                                     |  161 ++
+ requirements.txt                                   |    2 +-
+ 58 files changed, 13182 insertions(+), 49 deletions(-)
