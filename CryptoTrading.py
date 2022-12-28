@@ -61,6 +61,8 @@ TRAIN_END_DATE= '2020-08-01'
 
 TEST_START_DATE = '2021-07-01'
 TEST_END_DATE = '2021-08-01'
+# To make the Agent more risk averse towards negative returns. Negative reward multiplier
+NEG_MUL = 0
 
 p = DataProcessor(data_source='binance', start_date=TRAIN_START_DATE, end_date=TRAIN_END_DATE, time_interval=TIME_INTERVAL)
 p.download_data(TICKER_LIST)
@@ -302,11 +304,8 @@ df_TEST = addIndicators(df = df_TEST)
 class TradingEnv(gym.Env):
 
     def __init__(self, df, render_mode=None, capital_frac = 0.2, cap_thresh=0.3):
-        self.trade_fee_bid_percent = 0.
-        self.trade_fee_ask_percent = 0.
-
         self.asset_data = df
-        self._current_tick = None
+        self._current_tick = 0
         self._done = None
 
         self.action_space = spaces.Discrete(2)
@@ -314,20 +313,19 @@ class TradingEnv(gym.Env):
 
         self.terminal_idx = len(self.asset_data) - 1
 
-        self.usd_balance = 1000
         self.capital_frac = capital_frac
         self.cap_thresh = cap_thresh
 
-        self.token_amount = 0
+        self.initial_capital = 1000
+        self.portfolio_value = self.initial_capital
+        self.running_capital = self.initial_capital
         self.token_balance = 0
-        self.token_price = 0
-        self.bought_token_at = 0
-        self.last_transaction_was_sell = False
 
         assert render_mode is None
         self.render_mode = render_mode
 
     def reset(self):
+
         self._done = False
         self._current_tick = self._start_tick
         self._last_trade_tick = self._current_tick - 1
@@ -344,33 +342,97 @@ class TradingEnv(gym.Env):
 
     def step(self, action):
         #action will come as either a 0 (sell) or a 1 (buy)
+        self._current_tick += 1
+        current_price = self.asset_data.frame.iloc[self._current_tick, :]['close']
+
+        reward = self._calculate_reward(action, current_price)
+
+        
+        #FROM BELOW
+        #how much we're investing each buy
+        investment = self.running_capital * self.capital_frac
+
+        # Buy Action
+        if action == 1:
+            #if not terminal state
+            if self.running_capital > self.initial_cap * self.running_thresh:
+                
+                #update running capital based on new investement
+                self.running_capital -= investment
+
+                #get how many tokens we're gonna buy
+                asset_units = investment/current_price
+
+                #buy them, add them to inventory
+                self.token_balance += asset_units
+
+        # Sell Action
+        elif action == 0:
+            #check to make sure we have tokens to sell
+            if self.token_balance > 0:
+
+                #add the sold token cash to running capital
+                self.running_capital += self.token_balance * current_price
+
+                #updating
+                self.token_balance = 0
+
 
         self.done = self.check_terminal()
 
-        reward = self._calculate_reward(action)
-
-        self._position = self._position.opposite()
-        self._last_trade_tick = self._current_tick
-
-        self._position_history.append(self._position)
-        observation = self._get_observation()
-        info = dict(
-            total_reward = self._total_reward,
-            total_profit = self._total_profit,
-            position = self._position.value
-        )
-        self._update_history(info)
-
         return observation, reward, self._done, info
 
-    def _calculate_reward(self, action):
-        step_reward = 0
+    def _calculate_reward(self, action, current_price):
 
+        #how much we're investing each buy
+        investment = self.running_capital * self.capital_frac
 
-        return step_reward
+        # Buy Action
+        if action == 1:
+            #if not terminal state
+            if self.running_capital > self.initial_cap * self.running_thresh:
+                
+                #update running capital based on new investement
+                self.running_capital -= investment
+
+                #get how many tokens we're gonna buy
+                asset_units = investment/current_price
+
+                #buy them, add them to inventory
+                self.token_balance += asset_units
+
+        # Sell Action
+        elif action == 0:
+            #check to make sure we have tokens to sell
+            if self.token_balance > 0:
+
+                #add the sold token cash to running capital
+                self.running_capital += self.token_balance * current_price
+
+                #updating
+                self.token_balance = 0
+
+        #grabbing previous portfolio value
+        prev_portfolio_value = self.portfolio_value
+        
+        #updating portolio value
+        self.portfolio_value = self.running_capital + ((self.token_balance) * current_price)
+
+        #getting new profit/loss
+        price_diff = self.portfolio_value - prev_portfolio_value
+
+        #init reward
+        reward = 0
+
+        #only make the reward > 0 if we made a profit
+        if price_diff > 0:
+            #calculating reward.
+            reward += np.log(price_diff)
+                
+        return reward
 
     def check_terminal(self):
-        if self.pointer == self.terminal_idx:
+        if self._current_tick == self.terminal_idx:
             return True
         elif self.capital <= self.initial_cap * self.cap_thresh:
             return True
