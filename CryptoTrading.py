@@ -1,35 +1,18 @@
 from __future__ import annotations
 
-from ding.config import compile_config
-from CryptoConfig import main_config, create_config
-
-from cmath import inf
-from typing import Any, List, Optional, Callable, Tuple
-from easydict import EasyDict
-from abc import abstractmethod
-import copy
-
-from collections import deque, namedtuple
-
 import torch
 import torch.nn as nn
 from torch import Tensor
 from torch.distributions.normal import Normal
 from sklearn.preprocessing import MinMaxScaler
 
-from ding.model import DQN
-from ding.policy import DQNPolicy
-from ding.data import DequeBuffer
-
-from ding.framework import task
-from ding.framework.context import OnlineRLContext
-from ding.framework.middleware import OffPolicyLearner, StepCollector, interaction_evaluator, data_pusher, eps_greedy_handler, CkptSaver
-
-
 import gymnasium as gym
 from gymnasium import spaces
 from gymnasium.utils import seeding
+from gymnasium.envs.registration import register
 from enum import Enum
+
+import matplotlib.pyplot as plt
 
 import math
 import requests
@@ -44,8 +27,6 @@ import time
 
 from talib.abstract import MACD, RSI, CCI, DX
 import talib as ta
-
-#from imblearn.over_sampling import SMOTE
 
 print("\n\n\n'88,dPYba,,adPYba,   ,adPPYba,  8b,dPPYba,   ,adPPYba, 8b       d8  \n","88P'   '88'    '8a a8'     '8a 88P'   `'8a a8P_____88 `8b     d8'  \n","88      88      88 8b       d8 88       88 8PP'''''''  `8b   d8'   \n","88      88      88 '8a,   ,a8' 88       88 '8b,   ,aa   `8b,d8'    \n","88      88      88  `'YbbdP''  88       88  `'Ybbd8''     Y88'     \n","                                                          d8'      \n","                                                         d8'       \n")
 print("> welcome to moneyDRL")
@@ -76,23 +57,6 @@ df_TEST = t.dataframe
 
 print(len(df))
 print(len(df_TEST))
-
-#df = df[df['tic'] == 'BTCUSDT'].copy()
-#df_ETHUSDT = df[df['tic'] == 'ETHUSDT'].copy()
-#df_ADAUSDT = df[df['tic'] == 'ADAUSDT'].copy()
-#df_ATOMUSDT = df[df['tic'] == 'ATOMUSDT'].copy()
-#df_SOLUSDT = df[df['tic'] == 'SOLUSDT'].copy()
-#df_DOTUSDT = df[df['tic'] == 'DOTUSDT'].copy()
-#df_DOGEUSDT = df[df['tic'] == 'DOGEUSDT'].copy()
-#df_AVAXUSDT = df[df['tic'] == 'AVAXUSDT'].copy()
-
-#df_AFTER_BTC_LIST = [df_ETHUSDT]#, df_ADAUSDT, df_ATOMUSDT, df_SOLUSDT, df_DOTUSDT, df_DOGEUSDT, df_AVAXUSDT]
-
-#unique_ticker = df.tic.unique()
-#print(unique_ticker)
-
-#price_array = np.column_stack([df[df.tic == tic].close for tic in unique_ticker])
-#print(price_array)
 
 def addFnG(df):
     #BASING EVERYTHING OFF THE BTC DATAFRAME
@@ -304,14 +268,18 @@ df_TEST = addIndicators(df = df_TEST)
 class TradingEnv(gym.Env):
 
     def __init__(self, df, render_mode=None, capital_frac = 0.2, cap_thresh=0.3):
-        self.asset_data = df
+        self.df = df
+        self.terminal_idx = len(self.df) - 1
+
+        self.prices, self.signal_features, self.feature_dim_len = self._process_data()
+
         self._current_tick = 0
         self._done = None
 
+        self.current_price
+
         self.action_space = spaces.Discrete(2)
         self.observation_space = spaces.Box(low = -np.inf, high = np.inf, shape = self.shape, dtype = np.float64)
-
-        self.terminal_idx = len(self.asset_data) - 1
 
         self.capital_frac = capital_frac
         self.cap_thresh = cap_thresh
@@ -321,68 +289,83 @@ class TradingEnv(gym.Env):
         self.running_capital = self.initial_capital
         self.token_balance = 0
 
+        self.store = {"action_store": [], "reward_store": [], "running_capital": [], "port_ret": []}
+
         assert render_mode is None
         self.render_mode = render_mode
 
-    def reset(self):
+    def _process_data(self):
+        '''
+        Overview:
+            used by env.reset(), process the raw data.
+        Arguments:
+            - start_idx (int): the start tick; if None, then randomly select.
+        Returns:
+            - prices: the close.
+            - selected_feature: feature map
+            - feature_dim_len: the dimension length of selected feature
+        '''
 
+        # ====== build feature map ========
+        all_feature = {k: self.df.loc[:, k].to_numpy() for k in INDICATORS}
+        prices = self.df.loc[:, 'close'].to_numpy()
+        # =================================
+
+        # ====== select features ========
+        corr_matrix = pd.DataFrame(self.df).corr().abs()
+        upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape),k=1).astype(np.bool));
+
+        selected_feature_name = INDICATORS
+
+        # selecting the columns which are having absolute correlation greater than 0.95 and making a list of those columns named 'dropping_these_features'.
+        dropping_these_features = [column for column in upper_tri.columns if any(upper_tri[column] > 0.99)]
+        for droppingFeature in dropping_these_features:
+            selected_feature_name.remove(str(droppingFeature))
+    
+        selected_feature = np.column_stack([all_feature[k] for k in selected_feature_name])
+        feature_dim_len = len(selected_feature_name)
+
+        return prices, selected_feature, feature_dim_len
+
+    def reset(self):
+        self.store = {"action_store": [], "reward_store": [], "running_capital": [], "port_ret": []}
+        self.current_price = 0
         self._done = False
         self._current_tick = self._start_tick
         self._last_trade_tick = self._current_tick - 1
-        self._position = Positions.Short
-        self._position_history = (self.window_size * [None]) + [self._position]
-        self._total_reward = 0.
         self._total_profit = 1.  # unit
         self._first_rendering = True
         self.history = {}
         return self._get_observation()
 
     def close(self):
-        raise NotImplementedError
+        plt.close()
 
     def step(self, action):
         #action will come as either a 0 (sell) or a 1 (buy)
         self._current_tick += 1
-        current_price = self.asset_data.frame.iloc[self._current_tick, :]['close']
 
-        reward = self._calculate_reward(action, current_price)
+        #getting current asset price
+        self.current_price = self.df.iloc[self._current_tick, :]['close']
 
-        
-        #FROM BELOW
-        #how much we're investing each buy
-        investment = self.running_capital * self.capital_frac
+        #grab reward
+        reward = self._calculate_reward(action, self.current_price)
 
-        # Buy Action
-        if action == 1:
-            #if not terminal state
-            if self.running_capital > self.initial_cap * self.running_thresh:
-                
-                #update running capital based on new investement
-                self.running_capital -= investment
-
-                #get how many tokens we're gonna buy
-                asset_units = investment/current_price
-
-                #buy them, add them to inventory
-                self.token_balance += asset_units
-
-        # Sell Action
-        elif action == 0:
-            #check to make sure we have tokens to sell
-            if self.token_balance > 0:
-
-                #add the sold token cash to running capital
-                self.running_capital += self.token_balance * current_price
-
-                #updating
-                self.token_balance = 0
-
+        #grab current params
+        observation = self._get_observation(self._current_tick)
 
         self.done = self.check_terminal()
 
+        self.store["action_store"].append(action)
+        self.store["reward_store"].append(reward)
+        self.store["running_capital"].append(self.running_capital)
+        info = self.store
+
+        
+
         return observation, reward, self._done, info
 
-    def _calculate_reward(self, action, current_price):
+    def _calculate_reward(self, action):
 
         #how much we're investing each buy
         investment = self.running_capital * self.capital_frac
@@ -396,7 +379,7 @@ class TradingEnv(gym.Env):
                 self.running_capital -= investment
 
                 #get how many tokens we're gonna buy
-                asset_units = investment/current_price
+                asset_units = investment/self.current_price
 
                 #buy them, add them to inventory
                 self.token_balance += asset_units
@@ -407,7 +390,7 @@ class TradingEnv(gym.Env):
             if self.token_balance > 0:
 
                 #add the sold token cash to running capital
-                self.running_capital += self.token_balance * current_price
+                self.running_capital += self.token_balance * self.current_price
 
                 #updating
                 self.token_balance = 0
@@ -416,7 +399,7 @@ class TradingEnv(gym.Env):
         prev_portfolio_value = self.portfolio_value
         
         #updating portolio value
-        self.portfolio_value = self.running_capital + ((self.token_balance) * current_price)
+        self.portfolio_value = self.running_capital + ((self.token_balance) * self.current_price)
 
         #getting new profit/loss
         price_diff = self.portfolio_value - prev_portfolio_value
@@ -434,157 +417,18 @@ class TradingEnv(gym.Env):
     def check_terminal(self):
         if self._current_tick == self.terminal_idx:
             return True
-        elif self.capital <= self.initial_cap * self.cap_thresh:
+        elif self.portfolio_value <= self.initial_cap * self.cap_thresh:
             return True
         else:
             return False
 
-    def buy(self):
-        prev_bought_at = self.account.bought_btc_at # How much did I buy BTC for before
-        if self.account.usd_balance - self.trade_amount >= 0:
-            if prev_bought_at == 0 or self.account.last_transaction_was_sell or (prev_bought_at > self.account.btc_price): #or (self.account.btc_price/prev_bought_at -1 > 0.005):
-                print(">> BUYING $",self.trade_amount," WORTH OF BITCOIN")
-                self.account.btc_amount += self.trade_amount / self.account.btc_price
-                self.account.usd_balance -= self.trade_amount
-                self.account.bought_btc_at = self.account.btc_price
-                self.account.last_transaction_was_sell = False
-            else:
-                print(">> Not worth buying more BTC at the moment")
-        else:
-            print(">> Not enough USD left in your account to buy BTC ")
+    def _get_observation(self, idx):
+        state = self.df[idx][1:]
+        state = self.scaler.transform(state.reshape(1, -1))
+        state = np.concatenate([state, [[self.portfolio_value/self.initial_capital, self.running_capital/self.portfolio_value, self.token_balance * self.current_price/self.initial_capital]]], axis=-1)
+        return state
 
-    def sell(self):
-        if self.account.btc_balance - self.trade_amount >= 0:
-            if self.account.btc_price > self.account.bought_btc_at: # Is it profitable?
-                print(">> SELLING $",self.trade_amount," WORTH OF BITCOIN")
-                self.account.btc_amount -= (self.trade_amount / self.account.btc_price)
-                self.account.usd_balance += self.trade_amount
-                self.account.last_transaction_was_sell = True
-            else:
-                print(">> Declining sale: Not profitable to sell BTC")
-        else:
-            print(">> Not enough BTC left in your account to buy USD ")
-
-class TradingEnv():
-
-    def __init__(self, cfg: EasyDict) -> None:
-
-        self._cfg = cfg
-        self._env_id = cfg.env_id
-        #======== param to plot =========
-        self.cnt = 0
-
-        if 'plot_freq' not in self._cfg:
-            self.plot_freq = 10
-        else:
-            self.plot_freq = self._cfg.plot_freq
-        if 'save_path' not in self._cfg:
-            self.save_path = './'
-        else:
-            self.save_path = self._cfg.save_path
-        #================================
-
-        self.train_range = cfg.train_range
-        self.test_range = cfg.test_range
-        self.window_size = cfg.window_size
-        self.prices = None
-        self.signal_features = None
-        self.feature_dim_len = None
-        self.shape = (cfg.window_size, 3)
-
-        #======== param about episode =========
-        self._start_tick = 0
-        self._end_tick = 0
-        self._done = None
-        self._current_tick = None
-        self._last_trade_tick = None
-        self._position = None
-        self._position_history = None
-        self._total_reward = None
-        #======================================
-
-        self._init_flag = True
-        # init the following variables variable at first reset.
-        self._action_space = None
-        self._observation_space = None
-        self._reward_space = None
-
-        self.trade_fee_bid_percent = 0.01  # unit
-        self.trade_fee_ask_percent = 0.005  # unit
-
-    def seed(self, seed: int, dynamic_seed: bool = True) -> None:
-        self._seed = seed
-        self._dynamic_seed = dynamic_seed
-        np.random.seed(self._seed)
-        self.np_random, seed = seeding.np_random(seed)
-
-    def reset(self, start_idx: int = None) -> Any:
-        self.cnt += 1
-        self.prices, self.signal_features, self.feature_dim_len = self._process_data(start_idx)
-        if self._init_flag:
-            self.shape = (self.window_size, self.feature_dim_len)
-            self._action_space = spaces.Discrete(len(Actions))
-            self._observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=self.shape, dtype=np.float64)
-            self._reward_space = gym.spaces.Box(-inf, inf, shape=(1, ), dtype=np.float32)
-            self._init_flag = False
-        self._done = False
-        self._current_tick = self._start_tick
-        self._last_trade_tick = self._current_tick - 1
-        self._position = Positions.FLAT
-        self._position_history = [self._position]
-        self._profit_history = [1.]
-        self._total_reward = 0.
-
-        return self._get_observation()
-
-    def random_action(self) -> Any:
-        return np.array([self.action_space.sample()])
-
-    def step(self, action: np.ndarray) -> BaseEnvTimestep:
-        assert isinstance(action, np.ndarray), type(action)
-        if action.shape == (1, ):
-            action = action.item()  # 0-dim array
-
-        self._done = False
-        self._current_tick += 1
-
-        if self._current_tick >= self._end_tick:
-            self._done = True
-
-        step_reward = self._calculate_reward(action)
-        self._total_reward += step_reward
-
-        self._position, trade = transform(self._position, action)
-
-        if trade:
-            self._last_trade_tick = self._current_tick
-
-        self._position_history.append(self._position)
-        self._profit_history.append(float(np.exp(self._total_reward)))
-        observation = self._get_observation()
-        info = dict(
-            total_reward=self._total_reward,
-            position=self._position.value,
-        )
-
-        if self._done:
-            if self._env_id[-1] == 'e' and self.cnt % self.plot_freq == 0:
-                self.render()
-            info['max_possible_profit'] = np.log(self.max_possible_profit())
-            info['eval_episode_return'] = self._total_reward
-
-        step_reward = to_ndarray([step_reward]).astype(np.float32)
-        return BaseEnvTimestep(observation, step_reward, self._done, info)
-
-    def _get_observation(self) -> np.ndarray:
-        obs = to_ndarray(self.signal_features[(self._current_tick - self.window_size + 1):self._current_tick + 1]).reshape(-1).astype(np.float32)
-
-        tick = (self._current_tick - self._last_trade_tick) / self._cfg.eps_length
-        obs = np.hstack([obs, to_ndarray([self._position.value]), to_ndarray([tick])]).astype(np.float32)
-        return obs
-
-    def render(self) -> None:
-        import matplotlib.pyplot as plt
+    def render(self):
         plt.clf()
         plt.xlabel('trading days')
         plt.ylabel('profit')
@@ -615,166 +459,89 @@ class TradingEnv():
         plt.legend(loc='upper left', bbox_to_anchor=(0.05, 0.95))
         plt.savefig(self.save_path + str(self._env_id) + '-price.png')
 
-    def close(self):
-        import matplotlib.pyplot as plt
-        plt.close()
 
-    # override
-    def create_collector_env_cfg(cfg: dict) -> List[dict]:
-        """
-        Overview:
-            Return a list of all of the environment from input config, used in env manager \
-            (a series of vectorized env), and this method is mainly responsible for envs collecting data.
-            In TradingEnv, this method will rename every env_id and generate different config.
-        Arguments:
-            - cfg (:obj:`dict`): Original input env config, which needs to be transformed into the type of creating \
-                env instance actually and generated the corresponding number of configurations.
-        Returns:
-            - env_cfg_list (:obj:`List[dict]`): List of ``cfg`` including all the config collector envs.
-        .. note::
-            Elements(env config) in collector_env_cfg/evaluator_env_cfg can be different, such as server ip and port.
-        """
-        collector_env_num = cfg.pop('collector_env_num')
-        collector_env_cfg = [copy.deepcopy(cfg) for _ in range(collector_env_num)]
-        for i in range(collector_env_num):
-            collector_env_cfg[i]['env_id'] += ('-' + str(i) + 'e')
-        return collector_env_cfg
 
-    # override
-    def create_evaluator_env_cfg(cfg: dict) -> List[dict]:
-        """
-        Overview:
-            Return a list of all of the environment from input config, used in env manager \
-            (a series of vectorized env), and this method is mainly responsible for envs evaluating performance.
-            In TradingEnv, this method will rename every env_id and generate different config.
-        Arguments:
-            - cfg (:obj:`dict`): Original input env config, which needs to be transformed into the type of creating \
-                env instance actually and generated the corresponding number of configurations.
-        Returns:
-            - env_cfg_list (:obj:`List[dict]`): List of ``cfg`` including all the config evaluator envs.
-        """
-        evaluator_env_num = cfg.pop('evaluator_env_num')
-        evaluator_env_cfg = [copy.deepcopy(cfg) for _ in range(evaluator_env_num)]
-        for i in range(evaluator_env_num):
-            evaluator_env_cfg[i]['env_id'] += ('-' + str(i) + 'e')
-        return evaluator_env_cfg
-
-    @abstractmethod
-    def _process_data(self, df, start_idx: int = None):
-        '''
-        Overview:
-            used by env.reset(), process the raw data.
-        Arguments:
-            - start_idx (int): the start tick; if None, then randomly select.
-        Returns:
-            - prices: the close.
-            - signal_features: feature map
-            - feature_dim_len: the dimension length of selected feature
-        '''
-
-        # ====== build feature map ========
-        all_feature = {k: df.loc[:, k].to_numpy() for k in INDICATORS}
-        prices = df.loc[:, 'Close'].to_numpy()
-        # =================================
-
-        # ====== select features ========
-        corr_matrix = pd.DataFrame(df).corr().abs()
-        upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape),k=1).astype(np.bool));
-        
-        selected_feature_name = INDICATORS
-
-        # selecting the columns which are having absolute correlation greater than 0.95 and making a list of those columns named 'dropping_these_features'.
-        dropping_these_features = [column for column in upper_tri.columns if any(upper_tri[column] > 0.99)]
-        print(dropping_these_features)
-        for droppingFeature in dropping_these_features:
-            selected_feature_name.remove(str(droppingFeature))
-
-        print(selected_feature_name)
-    
-        selected_feature = np.column_stack([all_feature[k] for k in selected_feature_name])
-        feature_dim_len = len(selected_feature_name)
-
-        # validate index
-        if start_idx is None:
-            if self.train_range == None or self.test_range == None:
-                self.start_idx = np.random.randint(self.window_size, len(self.df) - self._cfg.eps_length)
-            elif self._env_id[-1] == 'e':
-                boundary = int(len(self.df) * (1 + self.test_range))
-                assert len(self.df) - self._cfg.eps_length > boundary + self.window_size,\
-                "parameter test_range is too large!"
-                self.start_idx = np.random.randint(boundary + self.window_size, len(self.df) - self._cfg.eps_length)
-            else:
-                boundary = int(len(self.df) * self.train_range)
-                assert boundary - self._cfg.eps_length > self.window_size,\
-                "parameter test_range is too small!"
-                self.start_idx = np.random.randint(self.window_size, boundary - self._cfg.eps_length)
+def buy(self):
+    prev_bought_at = self.account.bought_btc_at # How much did I buy BTC for before
+    if self.account.usd_balance - self.trade_amount >= 0:
+        if prev_bought_at == 0 or self.account.last_transaction_was_sell or (prev_bought_at > self.account.btc_price): #or (self.account.btc_price/prev_bought_at -1 > 0.005):
+            print(">> BUYING $",self.trade_amount," WORTH OF BITCOIN")
+            self.account.btc_amount += self.trade_amount / self.account.btc_price
+            self.account.usd_balance -= self.trade_amount
+            self.account.bought_btc_at = self.account.btc_price
+            self.account.last_transaction_was_sell = False
         else:
-            self.start_idx = start_idx
+            print(">> Not worth buying more BTC at the moment")
+    else:
+        print(">> Not enough USD left in your account to buy BTC ")
 
-        self._start_tick = self.start_idx
-        self._end_tick = self._start_tick + self._cfg.eps_length - 1
+def sell(self):
+    if self.account.btc_balance - self.trade_amount >= 0:
+        if self.account.btc_price > self.account.bought_btc_at: # Is it profitable?
+            print(">> SELLING $",self.trade_amount," WORTH OF BITCOIN")
+            self.account.btc_amount -= (self.trade_amount / self.account.btc_price)
+            self.account.usd_balance += self.trade_amount
+            self.account.last_transaction_was_sell = True
+        else:
+            print(">> Declining sale: Not profitable to sell BTC")
+    else:
+        print(">> Not enough BTC left in your account to buy USD ")
 
-        return prices, selected_feature, feature_dim_len
 
-    @abstractmethod
-    def _calculate_reward(self, action: int) -> np.float32:
-        step_reward = 0.
-        current_price = (self.raw_prices[self._current_tick])
-        last_trade_price = (self.raw_prices[self._last_trade_tick])
-        ratio = current_price / last_trade_price
-        cost = np.log((1 - self.trade_fee_ask_percent) * (1 - self.trade_fee_bid_percent))
 
-        if action == Actions.BUY and self._position == Positions.SHORT:
-            step_reward = np.log(2 - ratio) + cost
 
-        if action == Actions.SELL and self._position == Positions.LONG:
-            step_reward = np.log(ratio) + cost
 
-        step_reward = float(step_reward)
+def to_ndarray(item: Any, dtype: np.dtype = None) -> np.ndarray:
+    r"""
+    Overview:
+        Change `torch.Tensor`, sequence of scalars to ndarray, and keep other data types unchanged.
+    Arguments:
+        - item (:obj:`object`): the item to be changed
+        - dtype (:obj:`type`): the type of wanted ndarray
+    Returns:
+        - item (:obj:`object`): the changed ndarray
+    .. note:
+        Now supports item type: :obj:`torch.Tensor`,  :obj:`dict`, :obj:`list`, :obj:`tuple` and :obj:`None`
+    """
 
-        return step_reward
+    def transform(d):
+        if dtype is None:
+            return np.array(d)
+        else:
+            return np.array(d, dtype=dtype)
 
-    @abstractmethod
-    def max_possible_profit(self) -> float:
-        current_tick = self._start_tick
-        last_trade_tick = current_tick - 1
-        profit = 1.
-
-        while current_tick <= self._end_tick:
-            if self.raw_prices[current_tick] < self.raw_prices[current_tick - 1]:
-                while (current_tick <= self._end_tick and self.raw_prices[current_tick] < self.raw_prices[current_tick - 1]): 
-                    current_tick += 1
-
-                current_price = self.raw_prices[current_tick - 1]
-                last_trade_price = self.raw_prices[last_trade_tick]
-                tmp_profit = profit * (2 - (current_price / last_trade_price)) * (1 - self.trade_fee_ask_percent) * (1 - self.trade_fee_bid_percent)
-                profit = max(profit, tmp_profit)
-            else:
-                while (current_tick <= self._end_tick
-                    and self.raw_prices[current_tick] >= self.raw_prices[current_tick - 1]):
-                    current_tick += 1
-
-                current_price = self.raw_prices[current_tick - 1]
-                last_trade_price = self.raw_prices[last_trade_tick]
-                tmp_profit = profit * (current_price / last_trade_price) * (1 - self.trade_fee_ask_percent
-                                                                            ) * (1 - self.trade_fee_bid_percent)
-                profit = max(profit, tmp_profit)
-            last_trade_tick = current_tick - 1
-
-        return profit
-
-    @property
-    def observation_space(self) -> gym.spaces.Space:
-        return self._observation_space
-
-    @property
-    def action_space(self) -> gym.spaces.Space:
-        return self._action_space
-
-    @property
-    def reward_space(self) -> gym.spaces.Space:
-        return self._reward_space
-
-    def __repr__(self) -> str:
-        return "DI-engine Trading Env"
-
+    if isinstance(item, dict):
+        new_data = {}
+        for k, v in item.items():
+            new_data[k] = to_ndarray(v, dtype)
+        return new_data
+    elif isinstance(item, list) or isinstance(item, tuple):
+        if len(item) == 0:
+            return None
+        elif isinstance(item[0], numbers.Integral) or isinstance(item[0], numbers.Real):
+            return transform(item)
+        elif hasattr(item, '_fields'):  # namedtuple
+            return type(item)(*[to_ndarray(t, dtype) for t in item])
+        else:
+            new_data = []
+            for t in item:
+                new_data.append(to_ndarray(t, dtype))
+            return new_data
+    elif isinstance(item, torch.Tensor):
+        if dtype is None:
+            return item.numpy()
+        else:
+            return item.numpy().astype(dtype)
+    elif isinstance(item, np.ndarray):
+        if dtype is None:
+            return item
+        else:
+            return item.astype(dtype)
+    elif isinstance(item, bool) or isinstance(item, str):
+        return item
+    elif np.isscalar(item):
+        return np.array(item)
+    elif item is None:
+        return None
+    else:
+        raise TypeError("not support item type: {}".format(type(item)))
