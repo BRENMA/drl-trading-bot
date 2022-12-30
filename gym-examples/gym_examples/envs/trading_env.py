@@ -124,7 +124,7 @@ class TradingEnv(gym.Env):
         # Buy Action
         if action == 1:
             #if not terminal state
-            if self.running_capital > self.initial_cap * self.running_thresh:
+            if self.running_capital > self.initial_capital * self.running_thresh:
                 
                 #update running capital based on new investement
                 self.running_capital -= investment
@@ -168,7 +168,7 @@ class TradingEnv(gym.Env):
     def check_terminal(self):
         if self._current_tick == self.terminal_idx:
             return True
-        elif self.portfolio_value <= self.initial_cap * self.cap_thresh:
+        elif self.portfolio_value <= self.initial_capital * self.cap_thresh:
             return True
         else:
             return False
