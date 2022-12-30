@@ -11,11 +11,10 @@ INDICATORS = ['high','low','open','close','fng','rsi','macd','macd_signal','macd
 
 class TradingEnv(gym.Env):
 
-    def __init__(self, df, capital_frac = 0.2, cap_thresh=0.3, window_size = 10):
+    def __init__(self, df, capital_frac = 0.2, cap_thresh=0.3, running_thresh=0.05):
 
         self.seed()
         self.df = df
-        self.window_size = window_size
         
         self.terminal_idx = len(self.df) - 1
 
@@ -32,6 +31,7 @@ class TradingEnv(gym.Env):
 
         self.capital_frac = capital_frac
         self.cap_thresh = cap_thresh
+        self.running_thresh = running_thresh
 
         self.initial_capital = 1000
         self.portfolio_value = self.initial_capital
