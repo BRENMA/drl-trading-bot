@@ -321,7 +321,6 @@ class BlackjackAgent:
     def decay_epsilon(self):
         self.epsilon = max(self.final_epsilon, self.epsilon - epsilon_decay)
 
-
 agent = BlackjackAgent(learning_rate=learning_rate, initial_epsilon=start_epsilon, epsilon_decay=epsilon_decay, final_epsilon=final_epsilon,)
 
 for episode in tqdm(range(n_episodes)):
