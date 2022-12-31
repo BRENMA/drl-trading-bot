@@ -107,7 +107,7 @@ class TradingEnv(gym.Env):
         #grab current params
         observation = self._get_observation()
 
-        self.done = self.check_terminal()
+        self._done = self.check_terminal()
 
         self.store["action_store"].append(action)
         self.store["reward_store"].append(reward)
@@ -177,10 +177,39 @@ class TradingEnv(gym.Env):
         price = np.array([self.prices[self._current_tick]])
         state = self.signal_features[self._current_tick]
         state = np.concatenate([state, [self.portfolio_value/self.initial_capital, self.running_capital/self.portfolio_value, self.token_balance * self.current_price/self.initial_capital]])
-        print(len(state))
-        print(len(self.selected_feature_name))
 
         state = {self.selected_feature_name[i]: state[i] for i in range(len(state))}
 
         return price, state
 
+    def render(self) -> None:
+        import matplotlib.pyplot as plt
+        plt.clf()
+        plt.xlabel('trading days')
+        plt.ylabel('profit')
+        plt.plot(self._profit_history)
+        plt.savefig(self.save_path + str(self._env_id) + "-profit.png")
+
+        plt.clf()
+        plt.xlabel('trading days')
+        plt.ylabel('close price')
+        window_ticks = np.arange(len(self._position_history))
+        eps_price = self.raw_prices[self._start_tick:self._end_tick + 1]
+        plt.plot(eps_price)
+
+        short_ticks = []
+        long_ticks = []
+        flat_ticks = []
+        for i, tick in enumerate(window_ticks):
+            if self._position_history[i] == Positions.SHORT:
+                short_ticks.append(tick)
+            elif self._position_history[i] == Positions.LONG:
+                long_ticks.append(tick)
+            else:
+                flat_ticks.append(tick)
+
+        plt.plot(long_ticks, eps_price[long_ticks], 'g^', markersize=3, label="Long")
+        plt.plot(flat_ticks, eps_price[flat_ticks], 'bo', markersize=3, label="Flat")
+        plt.plot(short_ticks, eps_price[short_ticks], 'rv', markersize=3, label="Short")
+        plt.legend(loc='upper left', bbox_to_anchor=(0.05, 0.95))
+        plt.savefig(self.save_path + str(self._env_id) + '-price.png')

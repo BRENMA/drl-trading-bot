@@ -4,12 +4,15 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 from torch.distributions.normal import Normal
+from torch import optim
 
 import gymnasium as gym
-from collections import defaultdict
+from collections import defaultdict, namedtuple, deque
 from tqdm import tqdm
+import random
 
 import matplotlib.pyplot as plt
+from config import *
 
 from gym_examples.envs.trading_env import TradingEnv
 
@@ -52,13 +55,14 @@ p.download_data(TICKER_LIST)
 p.clean_data()
 df = p.dataframe
 
-#t = DataProcessor(data_source='binance', start_date=TEST_START_DATE, end_date=TEST_END_DATE, time_interval=TIME_INTERVAL)
-#t.download_data(TICKER_LIST)
-#t.clean_data()
-#df_TEST = t.dataframe
+#print(df)
 
-print(len(df))
-#print(len(df_TEST))
+t = DataProcessor(data_source='binance', start_date=TEST_START_DATE, end_date=TEST_END_DATE, time_interval=TIME_INTERVAL)
+t.download_data(TICKER_LIST)
+t.clean_data()
+df_TEST = t.dataframe
+
+#df_BTCUSDT = df[df['tic'] == 'BTCUSDT'].copy()
 
 def addFnG(df):
     #BASING EVERYTHING OFF THE BTC DATAFRAME
@@ -269,107 +273,222 @@ df = addIndicators(df = df)
 #price_array, tech_array, turbulence_array = splitIntoArr(df = df)
 #price_array_TEST, tech_array_TEST, turbulence_array_TEST = splitIntoArr(df = df_TEST)
 
-###################
-#trading env
+class ReplayMemory:
+    """
+    Implementation of Agent memory
+    """
+    def __init__(self, capacity=MEMORY_LEN):
+        self.memory = deque(maxlen=capacity)
 
-env = gym.make('gym_examples/TradingEnv-v0', df = df, window_size = 10)
+    def store(self, t):
+        self.memory.append(t)
 
-done = False
+    def sample(self, n):
+        a = random.sample(self.memory, n)
+        return a
 
-price, state = env.reset()
-print(price)
-print(state)
+    def __len__(self):
+        return len(self.memory)
 
-learning_rate = 0.01
-n_episodes = 100_000
-start_epsilon = 1.0
-epsilon_decay = start_epsilon / (n_episodes / 2)  # reduce the exploration over time
-final_epsilon = 0.1
+class DuellingDQN(nn.Module):
+    """
+    Duelling Deep Q Network Agent
+    """
+    def __init__(self, input_dim=STATE_SPACE, output_dim=ACTION_SPACE):
+        super(DuellingDQN, self).__init__()
+        self.input_dim = input_dim
+        self.output_dim = output_dim
 
-class BlackjackAgent:
-    def __init__( self, learning_rate: float, initial_epsilon: float, epsilon_decay: float, final_epsilon: float, discount_factor: float = 0.95):
+        self.fc1 = nn.Linear(self.input_dim, 500)
+        self.fc2 = nn.Linear(500, 500)
+        self.fc3 = nn.Linear(500, 300)
+        self.fc4 = nn.Linear(300, 200)
+        self.fc5 = nn.Linear(200, 10)
 
-        self.q_values = defaultdict(lambda: np.zeros(env.action_space.n))
+        self.fcs = nn.Linear(10, 1)
+        self.fcp = nn.Linear(10, self.output_dim)
+        self.fco = nn.Linear(self.output_dim + 1, self.output_dim)
 
-        self.lr = learning_rate
-        self.discount_factor = discount_factor
+        self.relu = nn.ReLU()
+        self.tanh = nn.Tanh()
+        self.sig = nn.Sigmoid()
+        self.sm = nn.Softmax(dim=1)
 
-        self.epsilon = initial_epsilon
-        self.epsilon_decay = epsilon_decay
-        self.final_epsilon = final_epsilon
+    def forward(self, state):
+        x = self.relu(self.fc1(state))
+        x = self.relu(self.fc2(x))
+        x = self.relu(self.fc3(x))
+        x = self.relu(self.fc4(x))
+        x = self.relu(self.fc5(x))
+        xs = self.relu(self.fcs(x))
+        xp = self.relu(self.fcp(x))
 
-        self.training_error = []
+        x = xs + xp - xp.mean()
+        return x
 
-    def get_action(self, obs: tuple[int, int, bool]) -> int:
+class DQNAgent:
+    """
+    Implements the Agent components
+    """
 
-        # with probability epsilon return a random action to explore the environment
-        if np.random.random() < self.epsilon:
-            return env.action_space.sample()
+    def __init__(self, actor_net=DuellingDQN, memory=ReplayMemory()):
+        
+        self.actor_online = actor_net(STATE_SPACE, ACTION_SPACE).to(DEVICE)
+        self.actor_target = actor_net(STATE_SPACE, ACTION_SPACE).to(DEVICE)
+        self.actor_target.load_state_dict(self.actor_online.state_dict())
+        self.actor_target.eval()
 
-        # with probability (1 - epsilon) act greedily (exploit)
+        self.memory = memory
+
+        self.actor_criterion = nn.MSELoss()
+        self.actor_op = optim.Adam(self.actor_online.parameters(), lr=LR_DQN)
+
+        self.t_step = 0
+
+    def act(self, state, eps=0.):
+        self.t_step += 1
+        
+        state = state[1]
+        state = np.fromiter(state.values(), dtype=float)
+        state = torch.from_numpy(state).float().to(DEVICE).view(1, -1)
+
+        self.actor_online.eval()
+        with torch.no_grad():
+            actions = self.actor_online(state)
+        self.actor_online.train()
+
+        if random.random() > eps:
+            act = np.argmax(actions.cpu().data.numpy())
         else:
-            return int(np.argmax(self.q_values[obs]))
+            act = random.choice(np.arange(ACTION_SPACE))
+        return int(act)
 
-    def update( self, obs: tuple[int, int, bool], action: int, reward: float, terminated: bool, next_obs: tuple[int, int, bool],):
-        """Updates the Q-value of an action."""
-        future_q_value = (not terminated) * np.max(self.q_values[next_obs])
-        temporal_difference = (reward + self.discount_factor * future_q_value - self.q_values[obs][action])
+    def learn(self):
+        if len(self.memory) <= MEMORY_THRESH:
+            return 0
 
-        self.q_values[obs][action] = (self.q_values[obs][action] + self.lr * temporal_difference)
-        self.training_error.append(temporal_difference)
+        if self.t_step > LEARN_AFTER and self.t_step % LEARN_EVERY==0:
+            # Sample experiences from the Memory
+            batch = self.memory.sample(BATCH_SIZE)
 
-    def decay_epsilon(self):
-        self.epsilon = max(self.final_epsilon, self.epsilon - epsilon_decay)
+            states = np.vstack([np.fromiter(t.States[1].values(), dtype=float) for t in batch])
 
-agent = BlackjackAgent(learning_rate=learning_rate, initial_epsilon=start_epsilon, epsilon_decay=epsilon_decay, final_epsilon=final_epsilon,)
+            states = torch.from_numpy(states).float().to(DEVICE)
 
+            actions = np.vstack([t.Actions for t in batch])
+            actions = torch.from_numpy(actions).float().to(DEVICE)
+
+            rewards = np.vstack([t.Rewards for t in batch])
+            rewards = torch.from_numpy(rewards).float().to(DEVICE)
+
+            next_states = np.vstack([np.fromiter(t.NextStates[1].values(), dtype=float) for t in batch])
+            next_states = torch.from_numpy(next_states).float().to(DEVICE)
+
+            dones = np.vstack([t.Dones for t in batch]).astype(np.uint8)
+            dones = torch.from_numpy(dones).float().to(DEVICE)
+
+            # ACTOR UPDATE
+            # Compute next state actions and state values
+            next_state_values = self.actor_target(next_states).max(1)[0].unsqueeze(1)
+            y = rewards + (1-dones) * GAMMA * next_state_values
+            state_values = self.actor_online(states).gather(1, actions.type(torch.int64))
+            # Compute Actor loss
+            actor_loss = self.actor_criterion(y, state_values)
+            # Minimize Actor loss
+            self.actor_op.zero_grad()
+            actor_loss.backward()
+            self.actor_op.step()
+
+            # return actor_loss.item()
+            if self.t_step % UPDATE_EVERY == 0:
+                self.soft_update(self.actor_online, self.actor_target)
+
+    def soft_update(self, local_model, target_model, tau=TAU):
+        for target_param, local_param in zip(target_model.parameters(), local_model.parameters()):
+            target_param.data.copy_(tau*local_param.data + (1.0-tau)*target_param.data)
+
+#df_LIST = [df_BTCUSDT, df_ETHUSDT, df_SOLUSDT, df_DOGEUSDT, df_ATOMUSDT, df_ADAUSDT, df_DOTUSDT, df_AVAXUSDT]
+#df_LIST_Test = [df_BTCUSDT_TEST, df_ETHUSDT_TEST, df_SOLUSDT_TEST, df_DOGEUSDT_TEST, df_ATOMUSDT_TEST, df_ADAUSDT_TEST, df_DOTUSDT_TEST, df_AVAXUSDT_TEST]
+
+env = gym.make('gym_examples/TradingEnv-v0', df = df)
+
+Transition = namedtuple("Transition", ["States", "Actions", "Rewards", "NextStates", "Dones"])
+
+memory = ReplayMemory()
+agent = DQNAgent(actor_net = DuellingDQN, memory = memory)
+
+# Main training loop
+learning_rate = 0.01
+n_episodes = 100
+
+scores = []
+eps = EPS_START
+
+te_score_min = -np.Inf
 for episode in tqdm(range(n_episodes)):
-    obs, info = env.reset()
+    score = 0
+    counter = 0
+    episode_score = 0
+    episode_score2 = 0
+
+    test_score = 0
+    test_score2 = 0
+
     done = False
 
-    # play one episode
+    state = env.reset()
     while not done:
-        action = agent.get_action(obs)
-        next_obs, reward, terminated, truncated, info = env.step(action)
+        action = agent.act(state, eps)
+        next_state, reward, done, _ = env.step(action)
 
-        # update the agent
-        agent.update(obs, action, reward, terminated, next_obs)
+        t = Transition(state, action, reward, next_state, done)
+        agent.memory.store(t)
+        agent.learn()
 
-        # update if the environment is done and the current obs
-        done = terminated or truncated
-        obs = next_obs
+        state = next_state
+        score += reward
+        counter += 1
+        if done:
+            break
 
-    agent.decay_epsilon()
+    episode_score += score
+    episode_score2 += (env.store['running_capital'][-1] - env.store['running_capital'][0])
 
-rolling_length = 500
-fig, axs = plt.subplots(ncols=3, figsize=(12, 5))
-axs[0].set_title("Episode rewards")
-reward_moving_average = (
-    np.convolve(
-        np.array(env.return_queue).flatten(), np.ones(rolling_length), mode="valid"
-    )
-    / rolling_length
-)
-axs[0].plot(range(len(reward_moving_average)), reward_moving_average)
-axs[1].set_title("Episode lengths")
-length_moving_average = (
-    np.convolve(
-        np.array(env.length_queue).flatten(), np.ones(rolling_length), mode="same"
-    )
-    / rolling_length
-)
-axs[1].plot(range(len(length_moving_average)), length_moving_average)
-axs[2].set_title("Training Error")
-training_error_moving_average = (
-    np.convolve(np.array(agent.training_error), np.ones(rolling_length), mode="same")
-    / rolling_length
-)
-axs[2].plot(range(len(training_error_moving_average)), training_error_moving_average)
-plt.tight_layout()
+    scores.append(episode_score)
+    eps = max(EPS_END, EPS_DECAY * eps)
+
+    #for i, test_env in enumerate(env):
+    state = env.reset()
+    done = False
+    score_te = 0
+    scores_te = [score_te]
+
+    while True:
+        actions = agent.act(state)
+        next_state, reward, done, _ = env.step(action)
+
+        state = next_state
+        score_te += reward
+        scores_te.append(score_te)
+        if done:
+            break
+
+        test_score += score_te
+        test_score2 += (env.store['running_capital'][-1] - env.store['running_capital'][0])
+    
+    if test_score > te_score_min:
+        te_score_min = test_score
+        torch.save(agent.actor_online.state_dict(), "online.pt")
+        torch.save(agent.actor_target.state_dict(), "target.pt")
+
+    print(f"Episode: {episode}, Train Score: {episode_score:.5f}, Validation Score: {test_score:.5f}")
+    print(f"Episode: {episode}, Train Value: ${episode_score2:.5f}, Validation Value: ${test_score2:.5f}", "\n")
+
+
+plt.figure(figsize=(15,6))
+plt.cla()
+env.render_all()
 plt.show()
-
-
-
 
 
 
