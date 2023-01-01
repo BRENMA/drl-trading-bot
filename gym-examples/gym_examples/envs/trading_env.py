@@ -4,8 +4,6 @@ from gym.utils import seeding
 
 import random
 import numpy as np
-import matplotlib
-matplotlib.use('Agg')
 
 import matplotlib.pyplot as plt
 
@@ -14,6 +12,7 @@ INDICATORS = ['high','low','open','close','fng','rsi','macd','macd_signal','macd
 class TradingEnv(gym.Env):
 
     def __init__(self, df, capital_frac = 0.2, cap_thresh=0.3, running_thresh=0.05):
+        self.selected_feature_name = INDICATORS
 
         self.seed()
         self.df = df
@@ -28,7 +27,7 @@ class TradingEnv(gym.Env):
         self._start_tick = self.window_size
         self._end_tick = len(self.df) - 1
         self._done = None
-        self._current_tick = None
+        self._current_tick = 0
         self._last_trade_tick = None
 
         self._total_reward = None
@@ -38,22 +37,16 @@ class TradingEnv(gym.Env):
 
         #self.renderN = 1
 
-        #self.selected_feature_name = INDICATORS
+        self.capital_frac = capital_frac
+        self.cap_thresh = cap_thresh
+        self.running_thresh = running_thresh
 
-        #self.current_price = None
+        self.initial_capital = 1000
+        self.portfolio_value = self.initial_capital
+        self.running_capital = self.initial_capital
 
-        #self.capital_frac = capital_frac
-        #self.cap_thresh = cap_thresh
-        #self.running_thresh = running_thresh
-
-        #self.initial_capital = 1000
-        #self.portfolio_value = self.initial_capital
-        #self.running_capital = self.initial_capital
-
-        #self.initial_token_balance = 0
-        #self.token_balance = self.initial_token_balance
-
-        #self.store = {"action_store": [], "reward_store": [], "running_capital": [], "token_balance": [], "portfolio_value": [], "price": []}
+        self.initial_token_balance = 0
+        self.token_balance = self.initial_token_balance
 
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
@@ -101,11 +94,9 @@ class TradingEnv(gym.Env):
         self._first_rendering = True
         self.history = {}
 
-        #self.portfolio_value = self.initial_capital
-        #self.running_capital = self.initial_capital
-        #self.token_balance = self.initial_token_balance
-        #self.store = {"action_store": [], "reward_store": [], "running_capital": [], "token_balance": [], "portfolio_value": [], "price": []}
-        #self.current_price = 0
+        self.portfolio_value = self.initial_capital
+        self.running_capital = self.initial_capital
+        self.token_balance = self.initial_token_balance
 
         return self._get_observation()
 
@@ -122,28 +113,14 @@ class TradingEnv(gym.Env):
         step_reward = self._calculate_reward(action)
         self._total_reward += step_reward
 
-        self._update_profit(action)
+        self._update_profit()
 
         self._last_trade_tick = self._current_tick
 
         observation = self._get_observation()
 
-        info = dict( total_reward = self._total_reward, total_profit = self._total_profit, position = self._position.value)
+        info = dict(total_reward = self._total_reward, total_profit = self._total_profit)
         self._update_history(info)
-
-        #getting current asset price
-        #self.current_price = self.df.iloc[self._current_tick, :]['close']
-
-        #grab current params
-        #observation = self._get_observation()
-
-        #self.store["action_store"].append(action)
-        #self.store["reward_store"].append(reward)
-        #self.store["running_capital"].append(self.running_capital)
-        #self.store["token_balance"].append(self.token_balance)
-        #self.store["portfolio_value"].append(self.portfolio_value)
-        #self.store["price"].append(self.current_price)
-        #info = self.store
 
         return observation, step_reward, self._done, info
 
@@ -155,6 +132,7 @@ class TradingEnv(gym.Env):
         self._total_profit = shares * current_price
 
     def _calculate_reward(self, action):
+        current_price = self.prices[self._current_tick]
 
         #how much we're investing each buy
         investment = self.running_capital * self.capital_frac
@@ -168,7 +146,7 @@ class TradingEnv(gym.Env):
                 self.running_capital -= investment
 
                 #get how many tokens we're gonna buy
-                asset_units = investment/self.current_price
+                asset_units = investment/current_price
 
                 #buy them, add them to inventory
                 self.token_balance += asset_units
@@ -179,7 +157,7 @@ class TradingEnv(gym.Env):
             if self.token_balance > 0:
 
                 #add the sold token cash to running capital
-                self.running_capital += self.token_balance * self.current_price
+                self.running_capital += self.token_balance * current_price
 
                 #updating
                 self.token_balance = 0
@@ -188,12 +166,12 @@ class TradingEnv(gym.Env):
         prev_portfolio_value = self.portfolio_value
         
         #updating portolio value
-        self.portfolio_value = self.running_capital + ((self.token_balance) * self.current_price)
+        self.portfolio_value = self.running_capital + ((self.token_balance) * current_price)
 
         #getting new profit/loss
         price_diff = self.portfolio_value - prev_portfolio_value
 
-        #init reward
+        #init selected_feature_name
         reward = 0
 
         #only make the reward > 0 if we made a profit
@@ -220,22 +198,44 @@ class TradingEnv(gym.Env):
 
         return self.signal_features[(self._current_tick-self.window_size+1):self._current_tick+1]
 
-    def render(self):
+    def _update_history(self, info):
+        if not self.history:
+            self.history = {key: [] for key in info.keys()}
+
+        for key, value in info.items():
+            self.history[key].append(value)
+
+    def render(self, mode='human'):
         import matplotlib.pyplot as plt
 
-        self.renderN += 1
+        #self.renderN += 1
+        #plt.clf()
+        #plt.figure(figsize=(10, 10), dpi=100)
+        #plt.xlabel('minutes')
+        #plt.ylabel('value')
+        ##plt.plot(self.store["action_store"], 'ro')
+        ##plt.plot(self.store["reward_store"], 'bs')
+        ##plt.plot(self.store["running_capital"], color = 'blue')
+        ##plt.plot(self.store["token_balance"], color = 'black')
+        #plt.plot(self.store["portfolio_value"], color = 'green')
+        #plt.plot(self.store["price"], color = 'red')
+        #plt.savefig('run' + str(self.renderN) + '-complete.png')
 
-        plt.clf()
-        plt.figure(figsize=(10, 10), dpi=100)
+        def _plot_position(tick):
+            plt.scatter(tick, self.prices[tick], color='green')
 
-        plt.xlabel('minutes')
-        plt.ylabel('value')
+        if self._first_rendering:
+            self._first_rendering = False
+            plt.cla()
+            plt.plot(self.prices)
 
-        #plt.plot(self.store["action_store"], 'ro')
-        #plt.plot(self.store["reward_store"], 'bs')
-        #plt.plot(self.store["running_capital"], color = 'blue')
-        #plt.plot(self.store["token_balance"], color = 'black')
-        plt.plot(self.store["portfolio_value"], color = 'green')
-        plt.plot(self.store["price"], color = 'red')
+            _plot_position(self._start_tick)
 
-        plt.savefig('run' + str(self.renderN) + '-complete.png')
+        _plot_position(self._current_tick)
+
+        plt.suptitle(
+            "Total Reward: %.6f" % self._total_reward + ' ~ ' +
+            "Total Profit: %.6f" % self._total_profit
+        )
+##################################################################
+        plt.pause(0.01)
