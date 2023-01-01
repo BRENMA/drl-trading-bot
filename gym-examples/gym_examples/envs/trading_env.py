@@ -2,16 +2,18 @@ import gym as gym
 from gym import spaces
 from gym.utils import seeding
 
-import random
 import numpy as np
+import random
 
-import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')
 
 INDICATORS = ['high','low','open','close','fng','rsi','macd','macd_signal','macd_hist','cci','dx','rf','sar','adx','adxr','apo','aroonosc','bop','cmo','minus_di','minus_dm','mom','plus_di','plus_dm','ppo_ta','roc','rocp','rocr','rocr100','trix','ultosc','willr','ht_dcphase','ht_sine','ht_trendmode','feature_PvEWMA_4','feature_PvCHLR_4','feature_RvRHLR_4','feature_CON_4','feature_RACORR_4','feature_PvEWMA_8','feature_PvCHLR_8','feature_RvRHLR_8','feature_CON_8','feature_RACORR_8','feature_PvEWMA_16','feature_PvCHLR_16','feature_RvRHLR_16','feature_CON_16','feature_RACORR_16']
 
 class TradingEnv(gym.Env):
 
     def __init__(self, df, capital_frac = 0.2, cap_thresh=0.3, running_thresh=0.05):
+        assert df.ndim == 2
         self.selected_feature_name = INDICATORS
 
         self.seed()
@@ -86,8 +88,8 @@ class TradingEnv(gym.Env):
     def reset(self):
         self._done = False
 
-        #self._current_tick = random.randrange(0, self._end_tick - 1)
-        self._current_tick = self._start_tick
+        self._current_tick = random.randrange(0, self._end_tick - 1 - self.window_size)
+        #self._current_tick = self._start_tick
         self._last_trade_tick = self._current_tick - 1
         self._total_reward = 0.
         self._total_profit = 1.  # unit
@@ -238,4 +240,4 @@ class TradingEnv(gym.Env):
             "Total Profit: %.6f" % self._total_profit
         )
 ##################################################################
-        plt.pause(0.01)
+        plt.savefig('run' + '-complete.png')

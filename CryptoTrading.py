@@ -210,11 +210,12 @@ def addIndicators(df):
     df.drop('tic', inplace=True, axis=1)
 
     min_max_scaler = MinMaxScaler()
-    df[df.columns] = min_max_scaler.fit_transform(df[df.columns]) 
 
-    #for column in df.columns:
-    #    if column != 'close':
-    #        df[column] = min_max_scaler.fit_transform(df[[column]])
+    #df[df.columns] = min_max_scaler.fit_transform(df[df.columns]) 
+
+    for column in df.columns:
+        if column != 'close':
+            df[column] = min_max_scaler.fit_transform(df[[column]])
 
     df = df.dropna()
 
@@ -226,17 +227,19 @@ df = addIndicators(df = df)
 env = gym.make('gym_examples/TradingEnv-v0', df = df)
 model = DQN("MlpPolicy", env, verbose=1)
 
-model.learn(total_timesteps=10_000, log_interval=4, progress_bar=True)
+model.learn(total_timesteps=100_000_000_000_000, progress_bar=True)
 
 model.save("dqn_crypto")
-del model  # delete trained model to demonstrate loading
-
-model = DQN.load("dqn_crypto", env=env)
+#del model  # delete trained model to demonstrate loading
+#
+#model = DQN.load("dqn_crypto", env=env)
 mean_reward, std_reward = evaluate_policy(model, model.get_env(), n_eval_episodes=10)
+print(mean_reward)
+print(std_reward)
 
 vec_env = model.get_env()
 obs = vec_env.reset()
-for i in range(1000):
+for i in range(5):
     action, _states = model.predict(obs, deterministic=True)
     obs, rewards, dones, info = vec_env.step(action)
     vec_env.render()
