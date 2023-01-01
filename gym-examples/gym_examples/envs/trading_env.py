@@ -3,9 +3,10 @@ from gymnasium import spaces
 from gymnasium.utils import seeding
 import random
 import numpy as np
-import pandas as pd
+import matplotlib
+matplotlib.use('Agg')
+
 import matplotlib.pyplot as plt
-import numbers
 
 INDICATORS = ['high','low','open','close','fng','rsi','macd','macd_signal','macd_hist','cci','dx','rf','sar','adx','adxr','apo','aroonosc','bop','cmo','minus_di','minus_dm','mom','plus_di','plus_dm','ppo_ta','roc','rocp','rocr','rocr100','trix','ultosc','willr','ht_dcphase','ht_sine','ht_trendmode','feature_PvEWMA_4','feature_PvCHLR_4','feature_RvRHLR_4','feature_CON_4','feature_RACORR_4','feature_PvEWMA_8','feature_PvCHLR_8','feature_RvRHLR_8','feature_CON_8','feature_RACORR_8','feature_PvEWMA_16','feature_PvCHLR_16','feature_RvRHLR_16','feature_CON_16','feature_RACORR_16']
 
@@ -15,7 +16,9 @@ class TradingEnv(gym.Env):
 
         self.seed()
         self.df = df
-        
+
+        self.renderN = 1
+
         self.terminal_idx = len(self.df) - 1
 
         self.selected_feature_name = INDICATORS
@@ -36,11 +39,11 @@ class TradingEnv(gym.Env):
         self.initial_capital = 1000
         self.portfolio_value = self.initial_capital
         self.running_capital = self.initial_capital
-        
+
         self.initial_token_balance = 0
         self.token_balance = self.initial_token_balance
 
-        self.store = {"action_store": [], "reward_store": [], "running_capital": [], "port_ret": []}
+        self.store = {"action_store": [], "reward_store": [], "running_capital": [], "token_balance": [], "portfolio_value": [], "price": []}
 
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
@@ -83,7 +86,7 @@ class TradingEnv(gym.Env):
 
         self.token_balance = self.initial_token_balance
 
-        self.store = {"action_store": [], "reward_store": [], "running_capital": [], "port_ret": []}
+        self.store = {"action_store": [], "reward_store": [], "running_capital": [], "token_balance": [], "portfolio_value": [], "price": []}
         
         self.current_price = 0
         self._done = False
@@ -112,6 +115,9 @@ class TradingEnv(gym.Env):
         self.store["action_store"].append(action)
         self.store["reward_store"].append(reward)
         self.store["running_capital"].append(self.running_capital)
+        self.store["token_balance"].append(self.token_balance)
+        self.store["portfolio_value"].append(self.portfolio_value)
+        self.store["price"].append(self.current_price)
         info = self.store
 
         return observation, reward, self._done, info
@@ -182,34 +188,23 @@ class TradingEnv(gym.Env):
 
         return price, state
 
-    def render(self) -> None:
+    def render(self):
         import matplotlib.pyplot as plt
-        plt.clf()
-        plt.xlabel('trading days')
-        plt.ylabel('profit')
-        plt.plot(self._profit_history)
-        plt.savefig(self.save_path + str(self._env_id) + "-profit.png")
+
+        self.renderN += 1
 
         plt.clf()
-        plt.xlabel('trading days')
-        plt.ylabel('close price')
-        window_ticks = np.arange(len(self._position_history))
-        eps_price = self.raw_prices[self._start_tick:self._end_tick + 1]
-        plt.plot(eps_price)
+        plt.figure(figsize=(10, 10), dpi=100)
 
-        short_ticks = []
-        long_ticks = []
-        flat_ticks = []
-        for i, tick in enumerate(window_ticks):
-            if self._position_history[i] == Positions.SHORT:
-                short_ticks.append(tick)
-            elif self._position_history[i] == Positions.LONG:
-                long_ticks.append(tick)
-            else:
-                flat_ticks.append(tick)
+        plt.xlabel('minutes')
+        plt.ylabel('value')
 
-        plt.plot(long_ticks, eps_price[long_ticks], 'g^', markersize=3, label="Long")
-        plt.plot(flat_ticks, eps_price[flat_ticks], 'bo', markersize=3, label="Flat")
-        plt.plot(short_ticks, eps_price[short_ticks], 'rv', markersize=3, label="Short")
-        plt.legend(loc='upper left', bbox_to_anchor=(0.05, 0.95))
-        plt.savefig(self.save_path + str(self._env_id) + '-price.png')
+        #plt.plot(self.store["action_store"], 'ro')
+        #plt.plot(self.store["reward_store"], 'bs')
+        #plt.plot(self.store["running_capital"], color = 'blue')
+        #plt.plot(self.store["token_balance"], color = 'black')
+        plt.plot(self.store["portfolio_value"], color = 'green')
+        plt.plot(self.store["price"], color = 'red')
+
+        plt.savefig('run' + str(self.renderN) + '-complete.png')
+        plt.close()
