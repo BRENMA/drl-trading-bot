@@ -1,6 +1,7 @@
-import gymnasium as gym
-from gymnasium import spaces
-from gymnasium.utils import seeding
+import gym as gym
+from gym import spaces
+from gym.utils import seeding
+
 import random
 import numpy as np
 import matplotlib
@@ -16,34 +17,43 @@ class TradingEnv(gym.Env):
 
         self.seed()
         self.df = df
-
-        self.renderN = 1
-
-        self.terminal_idx = len(self.df) - 1
-
-        self.selected_feature_name = INDICATORS
         self.prices, self.signal_features, self.feature_dim_len = self._process_data()
 
-        self._current_tick = 0
-        self._done = None
-
-        self.current_price = None
+        self.window_size = 10
+        self.shape = (self.window_size, self.signal_features.shape[1])
 
         self.action_space = spaces.Discrete(2)
-        self.observation_space = spaces.Box(low = -np.inf, high = np.inf, dtype = np.float64)
+        self.observation_space = spaces.Box(low = -np.inf, high = np.inf, shape=self.shape, dtype = np.float64)
 
-        self.capital_frac = capital_frac
-        self.cap_thresh = cap_thresh
-        self.running_thresh = running_thresh
+        self._start_tick = self.window_size
+        self._end_tick = len(self.df) - 1
+        self._done = None
+        self._current_tick = None
+        self._last_trade_tick = None
 
-        self.initial_capital = 1000
-        self.portfolio_value = self.initial_capital
-        self.running_capital = self.initial_capital
+        self._total_reward = None
+        self._total_profit = None
+        self._first_rendering = None
+        self.history = None
 
-        self.initial_token_balance = 0
-        self.token_balance = self.initial_token_balance
+        #self.renderN = 1
 
-        self.store = {"action_store": [], "reward_store": [], "running_capital": [], "token_balance": [], "portfolio_value": [], "price": []}
+        #self.selected_feature_name = INDICATORS
+
+        #self.current_price = None
+
+        #self.capital_frac = capital_frac
+        #self.cap_thresh = cap_thresh
+        #self.running_thresh = running_thresh
+
+        #self.initial_capital = 1000
+        #self.portfolio_value = self.initial_capital
+        #self.running_capital = self.initial_capital
+
+        #self.initial_token_balance = 0
+        #self.token_balance = self.initial_token_balance
+
+        #self.store = {"action_store": [], "reward_store": [], "running_capital": [], "token_balance": [], "portfolio_value": [], "price": []}
 
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
@@ -81,17 +91,22 @@ class TradingEnv(gym.Env):
         return prices, selected_feature, feature_dim_len
 
     def reset(self):
-        self.portfolio_value = self.initial_capital
-        self.running_capital = self.initial_capital
-
-        self.token_balance = self.initial_token_balance
-
-        self.store = {"action_store": [], "reward_store": [], "running_capital": [], "token_balance": [], "portfolio_value": [], "price": []}
-        
-        self.current_price = 0
         self._done = False
 
-        self._current_tick = random.randrange(0, self.terminal_idx - 1)
+        #self._current_tick = random.randrange(0, self._end_tick - 1)
+        self._current_tick = self._start_tick
+        self._last_trade_tick = self._current_tick - 1
+        self._total_reward = 0.
+        self._total_profit = 1.  # unit
+        self._first_rendering = True
+        self.history = {}
+
+        #self.portfolio_value = self.initial_capital
+        #self.running_capital = self.initial_capital
+        #self.token_balance = self.initial_token_balance
+        #self.store = {"action_store": [], "reward_store": [], "running_capital": [], "token_balance": [], "portfolio_value": [], "price": []}
+        #self.current_price = 0
+
         return self._get_observation()
 
     def close(self):
@@ -99,28 +114,45 @@ class TradingEnv(gym.Env):
 
     def step(self, action):
         #action will come as either a 0 (sell) or a 1 (buy)
+        self._done = False
         self._current_tick += 1
-
-        #getting current asset price
-        self.current_price = self.df.iloc[self._current_tick, :]['close']
-
-        #grab reward
-        reward = self._calculate_reward(action)
-
-        #grab current params
-        observation = self._get_observation()
 
         self._done = self.check_terminal()
 
-        self.store["action_store"].append(action)
-        self.store["reward_store"].append(reward)
-        self.store["running_capital"].append(self.running_capital)
-        self.store["token_balance"].append(self.token_balance)
-        self.store["portfolio_value"].append(self.portfolio_value)
-        self.store["price"].append(self.current_price)
-        info = self.store
+        step_reward = self._calculate_reward(action)
+        self._total_reward += step_reward
 
-        return observation, reward, self._done, info
+        self._update_profit(action)
+
+        self._last_trade_tick = self._current_tick
+
+        observation = self._get_observation()
+
+        info = dict( total_reward = self._total_reward, total_profit = self._total_profit, position = self._position.value)
+        self._update_history(info)
+
+        #getting current asset price
+        #self.current_price = self.df.iloc[self._current_tick, :]['close']
+
+        #grab current params
+        #observation = self._get_observation()
+
+        #self.store["action_store"].append(action)
+        #self.store["reward_store"].append(reward)
+        #self.store["running_capital"].append(self.running_capital)
+        #self.store["token_balance"].append(self.token_balance)
+        #self.store["portfolio_value"].append(self.portfolio_value)
+        #self.store["price"].append(self.current_price)
+        #info = self.store
+
+        return observation, step_reward, self._done, info
+
+    def _update_profit(self):
+        current_price = self.prices[self._current_tick]
+        last_trade_price = self.prices[self._last_trade_tick]
+
+        shares = self._total_profit / last_trade_price
+        self._total_profit = shares * current_price
 
     def _calculate_reward(self, action):
 
@@ -172,7 +204,7 @@ class TradingEnv(gym.Env):
         return reward
 
     def check_terminal(self):
-        if self._current_tick == self.terminal_idx:
+        if self._current_tick == self._end_tick:
             return True
         elif self.portfolio_value <= self.initial_capital * self.cap_thresh:
             return True
@@ -180,13 +212,13 @@ class TradingEnv(gym.Env):
             return False
 
     def _get_observation(self):
-        price = np.array([self.prices[self._current_tick]])
-        state = self.signal_features[self._current_tick]
-        state = np.concatenate([state, [self.portfolio_value/self.initial_capital, self.running_capital/self.portfolio_value, self.token_balance * self.current_price/self.initial_capital]])
+        #price = np.array([self.prices[self._current_tick]])
+        #state = self.signal_features[self._current_tick]
+        #state = np.concatenate([state, [self.portfolio_value/self.initial_capital, self.running_capital/self.portfolio_value, self.token_balance * self.current_price/self.initial_capital]])
+        #state = {self.selected_feature_name[i]: state[i] for i in range(len(state))}
+        #return price, state
 
-        state = {self.selected_feature_name[i]: state[i] for i in range(len(state))}
-
-        return price, state
+        return self.signal_features[(self._current_tick-self.window_size+1):self._current_tick+1]
 
     def render(self):
         import matplotlib.pyplot as plt
@@ -207,4 +239,3 @@ class TradingEnv(gym.Env):
         plt.plot(self.store["price"], color = 'red')
 
         plt.savefig('run' + str(self.renderN) + '-complete.png')
-        plt.close()

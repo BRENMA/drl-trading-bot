@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import gymnasium as gym
+import gym as gym
 from config import *
 from gym_examples.envs.trading_env import TradingEnv
+
 from sklearn.preprocessing import MinMaxScaler
 import math
 import requests
@@ -240,7 +241,6 @@ for i in range(1000):
     obs, rewards, dones, info = vec_env.step(action)
     vec_env.render()
 
-
 def buy(self):
     prev_bought_at = self.account.bought_btc_at # How much did I buy BTC for before
     if self.account.usd_balance - self.trade_amount >= 0:
@@ -265,3 +265,4 @@ def sell(self):
             print(">> Declining sale: Not profitable to sell BTC")
     else:
         print(">> Not enough BTC left in your account to buy USD ")
+
