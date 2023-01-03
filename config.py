@@ -5,11 +5,11 @@ INDICATORS = ['high','low','open','close','fng','rsi','macd','macd_signal','macd
 period_lengths = [4, 8, 16, 32, 64, 128, 256]
 
 TIME_INTERVAL = '1m'
-TRAIN_START_DATE = '2020-07-01'
-TRAIN_END_DATE= '2020-08-01'
+TRAIN_START_DATE = '2018-01-01'
+TRAIN_END_DATE= '2022-12-20'
 
-TEST_START_DATE = '2021-07-01'
-TEST_END_DATE = '2021-08-01'
+TEST_START_DATE = '2017-07-01'
+TEST_END_DATE = '2017-08-01'
 
 # To make the Agent more risk averse towards negative returns. Negative reward multiplier
 NEG_MUL = 0

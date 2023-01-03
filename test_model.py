@@ -1,8 +1,5 @@
-from __future__ import annotations
-
-import gym as gym
-from config import *
-from gym_examples.envs.trading_env import TradingEnv
+from stable_baselines3 import DQN
+from stable_baselines3.common.evaluation import evaluate_policy
 
 from sklearn.preprocessing import MinMaxScaler
 import math
@@ -15,16 +12,27 @@ from talib.abstract import MACD, RSI, CCI, DX
 import talib as ta
 from typing import Dict
 
-from stable_baselines3 import DQN
-from stable_baselines3.common.evaluation import evaluate_policy
+import gym as gym
+from config import *
+from gym_examples.envs.trading_env import TradingEnv
 
-print('\n'+'\n'+'\n'+"                                   )\._.,--....,'``.      " + '\n' + "                                  /;   _.. \   _\  (`._ ,." + '\n' + "                    $            `----(,_..'--(,_..'`-.;.'" + '\n' + '\n' + "                                                       /$$$$$$$  /$$$$$$$  /$$      " + "\n" +"                                                      | $$__  $$| $$__  $$| $$      " + "\n" +" /$$$$$$/$$$$   /$$$$$$  /$$$$$$$   /$$$$$$  /$$   /$$| $$  \ $$| $$  \ $$| $$      " + "\n" +"| $$_  $$_  $$ /$$__  $$| $$__  $$ /$$__  $$| $$  | $$| $$  | $$| $$$$$$$/| $$      " + "\n" +"| $$ \ $$ \ $$| $$  \ $$| $$  \ $$| $$$$$$$$| $$  | $$| $$  | $$| $$__  $$| $$      " + "\n" +"| $$ | $$ | $$| $$  | $$| $$  | $$| $$_____/| $$  | $$| $$  | $$| $$  \ $$| $$      " + "\n" +"| $$ | $$ | $$|  $$$$$$/| $$  | $$|  $$$$$$$|  $$$$$$$| $$$$$$$/| $$  | $$| $$$$$$$$" + "\n" +"|__/ |__/ |__/ \______/ |__/  |__/ \_______/ \____  $$|_______/ |__/  |__/|________/" + "\n" +"                                             /$$  | $$                              " + "\n" +"                                            |  $$$$$$/                              " + "\n" +"                                             \______/                               " + "\n" + "\n")
-print("creating Testing Data")
+t = DataProcessor(data_source='binance', start_date=TEST_START_DATE, end_date=TEST_END_DATE, time_interval=TIME_INTERVAL)
+t.download_data(TICKER_LIST)
+t.clean_data()
+df_TEST = t.dataframe
 
-p = DataProcessor(data_source='binance', start_date=TRAIN_START_DATE, end_date=TRAIN_END_DATE, time_interval=TIME_INTERVAL)
-p.download_data(TICKER_LIST)
-p.clean_data()
-df = p.dataframe
+env = gym.make('gym_examples/TradingEnv-v0', df = df, window_size = 10)
+
+model = DQN.load("dqn_crypto", env=env)
+
+vec_env = model.get_env()
+obs = vec_env.reset()
+for i in range(5):
+    action, _states = model.predict(obs, deterministic=True)
+    obs, rewards, dones, info = vec_env.step(action)
+    vec_env.render()
+
+
 
 def addFnG(df):
     #BASING EVERYTHING OFF THE BTC DATAFRAME
@@ -240,32 +248,3 @@ for i in range(5):
     vec_env.render()
 
 
-
-
-
-
-
-def buy(self):
-    prev_bought_at = self.account.bought_btc_at # How much did I buy BTC for before
-    if self.account.usd_balance - self.trade_amount >= 0:
-        if prev_bought_at == 0 or self.account.last_transaction_was_sell or (prev_bought_at > self.account.btc_price): #or (self.account.btc_price/prev_bought_at -1 > 0.005):
-            print(">> BUYING $",self.trade_amount," WORTH OF BITCOIN")
-            self.account.btc_amount += self.trade_amount / self.account.btc_price
-            self.account.usd_balance -= self.trade_amount
-            self.account.bought_btc_at = self.account.btc_price
-            self.account.last_transaction_was_sell = False
-        else:
-            print(">> Not worth buying more BTC at the moment")
-    else:
-        print(">> Not enough USD left in your account to buy BTC ")
-def sell(self):
-    if self.account.btc_balance - self.trade_amount >= 0:
-        if self.account.btc_price > self.account.bought_btc_at: # Is it profitable?
-            print(">> SELLING $",self.trade_amount," WORTH OF BITCOIN")
-            self.account.btc_amount -= (self.trade_amount / self.account.btc_price)
-            self.account.usd_balance += self.trade_amount
-            self.account.last_transaction_was_sell = True
-        else:
-            print(">> Declining sale: Not profitable to sell BTC")
-    else:
-        print(">> Not enough BTC left in your account to buy USD ")

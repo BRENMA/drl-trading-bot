@@ -149,3 +149,4 @@ alpaca_processor_test.py
 
 /datasets
 getBars.py
+trade_execution.py
