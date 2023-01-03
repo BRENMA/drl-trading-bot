@@ -219,10 +219,10 @@ def addIndicators(df):
 df = addIndicators(df = df)
 #df_TEST = addIndicators(df = df_TEST)
 
-env = gym.make('gym_examples/TradingEnv-v0', df = df, window_size = 10)
+env = gym.make('gym_examples/TradingEnv-v0', df = df, window_size = 5, frame_bound = (5, 50))
 model = DQN("MlpPolicy", env, verbose=1)
 
-model.learn(total_timesteps=10_000_000, progress_bar=True)
+model.learn(total_timesteps=10_000, progress_bar=True)
 
 model.save("dqn_crypto")
 #del model  # delete trained model to demonstrate loading

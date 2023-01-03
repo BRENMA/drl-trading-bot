@@ -1,5 +1,8 @@
-from stable_baselines3 import DQN
-from stable_baselines3.common.evaluation import evaluate_policy
+from __future__ import annotations
+
+import gym as gym
+from config import *
+from gym_examples.envs.trading_env import TradingEnv
 
 from sklearn.preprocessing import MinMaxScaler
 import math
@@ -12,27 +15,13 @@ from talib.abstract import MACD, RSI, CCI, DX
 import talib as ta
 from typing import Dict
 
-import gym as gym
-from config import *
-from gym_examples.envs.trading_env import TradingEnv
+from stable_baselines3 import DQN
+from stable_baselines3.common.evaluation import evaluate_policy
 
 t = DataProcessor(data_source='binance', start_date=TEST_START_DATE, end_date=TEST_END_DATE, time_interval=TIME_INTERVAL)
 t.download_data(TICKER_LIST)
 t.clean_data()
 df_TEST = t.dataframe
-
-env = gym.make('gym_examples/TradingEnv-v0', df = df, window_size = 10)
-
-model = DQN.load("dqn_crypto", env=env)
-
-vec_env = model.get_env()
-obs = vec_env.reset()
-for i in range(5):
-    action, _states = model.predict(obs, deterministic=True)
-    obs, rewards, dones, info = vec_env.step(action)
-    vec_env.render()
-
-
 
 def addFnG(df):
     #BASING EVERYTHING OFF THE BTC DATAFRAME
@@ -140,8 +129,7 @@ def addFnG(df):
 
     return df
 
-df = addFnG(df = df)
-#df_TEST = addFnG(df = df_TEST)
+df_TEST = addFnG(df = df_TEST)
 
 def add_feature_columns(df, period_length):
     # get the price vs ewma feature
@@ -224,27 +212,14 @@ def addIndicators(df):
 
     return df
 
-df = addIndicators(df = df)
-#df_TEST = addIndicators(df = df_TEST)
+df_TEST = addIndicators(df = df_TEST)
 
-env = gym.make('gym_examples/TradingEnv-v0', df = df, window_size = 10)
-model = DQN("MlpPolicy", env, verbose=1)
-
-model.learn(total_timesteps=10_000_000, progress_bar=True)
-
-model.save("dqn_crypto")
-#del model  # delete trained model to demonstrate loading
-
-#model = DQN.load("dqn_crypto", env=env)
-mean_reward, std_reward = evaluate_policy(model, model.get_env(), n_eval_episodes=10)
-print(mean_reward)
-print(std_reward)
+env = gym.make('gym_examples/TradingEnv-v0', df = df_TEST)
+model = DQN.load("dqn_crypto", env=env)
 
 vec_env = model.get_env()
 obs = vec_env.reset()
-for i in range(5):
+for i in range(len(df_TEST)):
     action, _states = model.predict(obs, deterministic=True)
     obs, rewards, dones, info = vec_env.step(action)
     vec_env.render()
-
-

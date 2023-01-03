@@ -1,15 +1,15 @@
 import torch
 
 TICKER_LIST = ["ETHUSDT"]#, "ATOMUSDT", "ADAUSDT", "BTCUSDT", "SOLUSDT", "DOTUSDT", "DOGEUSDT", "AVAXUSDT"]
-INDICATORS = ['high','low','open','close','fng','rsi','macd','macd_signal','macd_hist','cci','dx','rf','sar','adx','adxr','apo','aroonosc','bop','cmo','minus_di','minus_dm','mom','plus_di','plus_dm','ppo_ta','roc','rocp','rocr','rocr100','trix','ultosc','willr','ht_dcphase','ht_sine','ht_trendmode','feature_PvEWMA_4','feature_PvCHLR_4','feature_RvRHLR_4','feature_CON_4','feature_RACORR_4','feature_PvEWMA_8','feature_PvCHLR_8','feature_RvRHLR_8','feature_CON_8','feature_RACORR_8','feature_PvEWMA_16','feature_PvCHLR_16','feature_RvRHLR_16','feature_CON_16','feature_RACORR_16']
+INDICATORS = ['high','low','open','close','fng','rsi','macd','macd_signal','macd_hist','cci','dx','rf','sar','adx','adxr','apo','aroonosc','bop','cmo','minus_di','minus_dm','mom','plus_di','plus_dm','ppo_ta','roc','rocp','rocr','rocr100','trix','ultosc','willr','ht_dcphase','ht_sine','ht_trendmode','feature_PvEWMA_4','feature_PvCHLR_4','feature_RvRHLR_4','feature_CON_4','feature_RACORR_4','feature_PvEWMA_8','feature_PvCHLR_8','feature_RvRHLR_8','feature_CON_8','feature_RACORR_8','feature_PvEWMA_16','feature_PvCHLR_16','feature_RvRHLR_16','feature_CON_16','feature_RACORR_16','feature_PvEWMA_32','feature_PvCHLR_32','feature_RvRHLR_32','feature_CON_32','feature_RACORR_32','feature_PvEWMA_64','feature_PvCHLR_64','feature_RvRHLR_64','feature_CON_64','feature_RACORR_64','feature_PvEWMA_128','feature_PvCHLR_128','feature_RvRHLR_128','feature_CON_128','feature_RACORR_128','feature_PvEWMA_256','feature_PvCHLR_256','feature_RvRHLR_256','feature_CON_256','feature_RACORR_256']
 period_lengths = [4, 8, 16, 32, 64, 128, 256]
 
 TIME_INTERVAL = '1m'
-TRAIN_START_DATE = '2018-01-01'
+TRAIN_START_DATE = '2022-12-01'
 TRAIN_END_DATE= '2022-12-20'
 
-TEST_START_DATE = '2017-07-01'
-TEST_END_DATE = '2017-08-01'
+TEST_START_DATE = '2022-12-20'
+TEST_END_DATE = '2023-01-01'
 
 # To make the Agent more risk averse towards negative returns. Negative reward multiplier
 NEG_MUL = 0
