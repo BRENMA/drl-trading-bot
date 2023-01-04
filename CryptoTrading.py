@@ -238,34 +238,3 @@ for i in range(5):
     action, _states = model.predict(obs, deterministic=True)
     obs, rewards, dones, info = vec_env.step(action)
     vec_env.render()
-
-
-
-
-
-
-
-def buy(self):
-    prev_bought_at = self.account.bought_btc_at # How much did I buy BTC for before
-    if self.account.usd_balance - self.trade_amount >= 0:
-        if prev_bought_at == 0 or self.account.last_transaction_was_sell or (prev_bought_at > self.account.btc_price): #or (self.account.btc_price/prev_bought_at -1 > 0.005):
-            print(">> BUYING $",self.trade_amount," WORTH OF BITCOIN")
-            self.account.btc_amount += self.trade_amount / self.account.btc_price
-            self.account.usd_balance -= self.trade_amount
-            self.account.bought_btc_at = self.account.btc_price
-            self.account.last_transaction_was_sell = False
-        else:
-            print(">> Not worth buying more BTC at the moment")
-    else:
-        print(">> Not enough USD left in your account to buy BTC ")
-def sell(self):
-    if self.account.btc_balance - self.trade_amount >= 0:
-        if self.account.btc_price > self.account.bought_btc_at: # Is it profitable?
-            print(">> SELLING $",self.trade_amount," WORTH OF BITCOIN")
-            self.account.btc_amount -= (self.trade_amount / self.account.btc_price)
-            self.account.usd_balance += self.trade_amount
-            self.account.last_transaction_was_sell = True
-        else:
-            print(">> Declining sale: Not profitable to sell BTC")
-    else:
-        print(">> Not enough BTC left in your account to buy USD ")
