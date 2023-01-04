@@ -20,7 +20,7 @@ class Actions(Enum):
 class TradingEnv(gym.Env):
         metadata = {'render.modes': ['human']}
 
-        def __init__(self, df, window_size, frame_bound, capital_frac = 0.2, cap_thresh=0.3, running_thresh=0.05):  
+        def __init__(self, df, window_size, frame_bound, capital_frac = 0.2, cap_thresh=0.3, running_thresh=0.05):
                 assert len(frame_bound) == 2
                 self.frame_bound = frame_bound
 
@@ -184,12 +184,12 @@ class TradingEnv(gym.Env):
                         elif self._position_history[i] == 0 :
                                 do_nothing.append(tick)
 
-                plt.plot(open_buy, self.prices[open_buy], 'go', marker="^")
-                plt.plot(close_buy, self.prices[close_buy], 'go', marker="v")
-                plt.plot(open_sell, self.prices[open_sell], 'ro', marker="v")
-                plt.plot(close_sell, self.prices[close_sell], 'ro', marker="^")
+                plt.plot(open_buy, self.prices[open_buy], 'go')
+                plt.plot(close_buy, self.prices[close_buy], 'go')
+                plt.plot(open_sell, self.prices[open_sell], 'ro')
+                plt.plot(close_sell, self.prices[close_sell], 'ro')
         
-                plt.plot(do_nothing, self.prices[do_nothing], 'yo')
+                #plt.plot(do_nothing, self.prices[do_nothing], 'yo')
 
                 plt.suptitle(
                         "Total Reward: %.6f" % self._total_reward + ' ~ ' +
@@ -218,10 +218,6 @@ class TradingEnv(gym.Env):
                         self.selected_feature_name.remove(str(droppingFeature))
 
                 selected_feature = np.column_stack((self.df.loc[:, k].to_numpy() for k in self.selected_feature_name))
-
-                #self.selected_feature_name.append('port_ovr_init_cap')
-                #self.selected_feature_name.append('run_ovr_port')
-                #self.selected_feature_name.append('investmnt_ovr_init_cap')
 
                 return prices, selected_feature
 

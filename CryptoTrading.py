@@ -8,6 +8,7 @@ from sklearn.preprocessing import MinMaxScaler
 import math
 import requests
 import pandas as pd
+import numpy as np
 from meta.data_processor import DataProcessor
 from datetime import datetime
 import time
@@ -15,8 +16,11 @@ from talib.abstract import MACD, RSI, CCI, DX
 import talib as ta
 from typing import Dict
 
-from stable_baselines3 import DQN
+from matplotlib import pyplot as plt
+
+from stable_baselines3 import PPO, A2C
 from stable_baselines3.common.evaluation import evaluate_policy
+from stable_baselines3.common.vec_env import DummyVecEnv
 
 print('\n'+'\n'+'\n'+"                                   )\._.,--....,'``.      " + '\n' + "                                  /;   _.. \   _\  (`._ ,." + '\n' + "                    $            `----(,_..'--(,_..'`-.;.'" + '\n' + '\n' + "                                                       /$$$$$$$  /$$$$$$$  /$$      " + "\n" +"                                                      | $$__  $$| $$__  $$| $$      " + "\n" +" /$$$$$$/$$$$   /$$$$$$  /$$$$$$$   /$$$$$$  /$$   /$$| $$  \ $$| $$  \ $$| $$      " + "\n" +"| $$_  $$_  $$ /$$__  $$| $$__  $$ /$$__  $$| $$  | $$| $$  | $$| $$$$$$$/| $$      " + "\n" +"| $$ \ $$ \ $$| $$  \ $$| $$  \ $$| $$$$$$$$| $$  | $$| $$  | $$| $$__  $$| $$      " + "\n" +"| $$ | $$ | $$| $$  | $$| $$  | $$| $$_____/| $$  | $$| $$  | $$| $$  \ $$| $$      " + "\n" +"| $$ | $$ | $$|  $$$$$$/| $$  | $$|  $$$$$$$|  $$$$$$$| $$$$$$$/| $$  | $$| $$$$$$$$" + "\n" +"|__/ |__/ |__/ \______/ |__/  |__/ \_______/ \____  $$|_______/ |__/  |__/|________/" + "\n" +"                                             /$$  | $$                              " + "\n" +"                                            |  $$$$$$/                              " + "\n" +"                                             \______/                               " + "\n" + "\n")
 print("creating Testing Data")
@@ -122,18 +126,9 @@ def addFnG(df):
     # prune the nan rows at the beginning of the dataframe
     df = df[period_lengths[-1]:]
 
-    #ADDING THE REST OF THE TOKENS
-    #for df_temp in df_AFTER_BTC_LIST:
-    #    print(df_temp)
-    #    print(df)
-    #    mergedDf = df_temp[df_temp['time'].isin(df['time'])]
-    #    print(mergedDf)
-    #    aaaaaaaaaaaaaaaaaa
-
     return df
 
 df = addFnG(df = df)
-#df_TEST = addFnG(df = df_TEST)
 
 def add_feature_columns(df, period_length):
     # get the price vs ewma feature
@@ -217,24 +212,76 @@ def addIndicators(df):
     return df
 
 df = addIndicators(df = df)
-#df_TEST = addIndicators(df = df_TEST)
 
-env = gym.make('gym_examples/TradingEnv-v0', df = df, window_size = 5, frame_bound = (5, 50))
-model = DQN("MlpPolicy", env, verbose=1)
+#TRAINING ====
+env_build = lambda: TradingEnv(df=df, frame_bound=(30,len(df)), window_size=30)
+env = DummyVecEnv([env_build])
 
-model.learn(total_timesteps=10_000, progress_bar=True)
+model_train = PPO(
+    policy = 'MlpPolicy',
+    env = env,
+    n_steps = 1024,
+    batch_size = 64,
+    n_epochs = 4,
+    gamma = 0.999,
+    gae_lambda = 0.98,
+    ent_coef = 0.01,
+    verbose=1
+)
 
-model.save("dqn_crypto")
+model_train.learn(total_timesteps=100000000)
+model_train.save("ppo_crypto")
+
+#TESTING =======
+###env = TradingEnv(df=df, frame_bound=(30,len(df)), window_size=30)
+###model = PPO.load("ppo_crypto", env=env)
+###
+###obs = env.reset()
+###while True: 
+###    obs = obs[np.newaxis, ...]
+###    action, _states = model.predict(obs)
+###    obs, rewards, done, info = env.step(action)
+###    if done:
+###        print("info", info)
+###        break
+###
+###plt.figure(figsize=(25,10))
+###plt.cla()
+###env.render()
+###env.save_rendering('test.png')
+
+#=======
+
+#env = TradingEnv(df=df, frame_bound=(5,10), window_size=5)
+#state = env.reset()
+#while True: 
+#    action = env.action_space.sample()
+#    n_state, reward, done, info = env.step(action)
+#    if done: 
+#        print("info", info)
+#        break
+#
+#plt.figure(figsize=(30,10))
+#plt.cla()
+#env.render()
+#env.save_rendering('test.png')
+#env = gym.make('gym_examples/TradingEnv-v0', df = df, window_size = 5, frame_bound = (5, 50))
+#model = DQN("MlpPolicy", env, verbose=1)
+#
+#model.learn(total_timesteps=10_000, progress_bar=True)
+#
+#model.save("dqn_crypto")
 #del model  # delete trained model to demonstrate loading
 
 #model = DQN.load("dqn_crypto", env=env)
-mean_reward, std_reward = evaluate_policy(model, model.get_env(), n_eval_episodes=10)
-print(mean_reward)
-print(std_reward)
-
-vec_env = model.get_env()
-obs = vec_env.reset()
-for i in range(5):
-    action, _states = model.predict(obs, deterministic=True)
-    obs, rewards, dones, info = vec_env.step(action)
-    vec_env.render()
+#mean_reward, std_reward = evaluate_policy(model, model.get_env(), n_eval_episodes=10)
+#print(mean_reward)
+#print(std_reward)
+#
+#vec_env = model.get_env()
+#obs = vec_env.reset()
+#for i in range(5):
+#    action, _states = model.predict(obs, deterministic=True)
+#    obs, rewards, dones, info = vec_env.step(action)
+#    vec_env.render()
+#

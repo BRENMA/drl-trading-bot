@@ -5,8 +5,8 @@ INDICATORS = ['high','low','open','close','fng','rsi','macd','macd_signal','macd
 period_lengths = [4, 8, 16, 32, 64, 128, 256]
 
 TIME_INTERVAL = '1m'
-TRAIN_START_DATE = '2022-12-01'
-TRAIN_END_DATE= '2022-12-20'
+TRAIN_START_DATE = '2017-01-01'
+TRAIN_END_DATE= '2023-01-01'
 
 TEST_START_DATE = '2022-12-20'
 TEST_END_DATE = '2023-01-01'
