@@ -18,7 +18,7 @@ from typing import Dict
 
 from matplotlib import pyplot as plt
 
-from stable_baselines3 import PPO, A2C
+from stable_baselines3 import PPO
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.vec_env import DummyVecEnv
 
@@ -214,41 +214,42 @@ def addIndicators(df):
 df = addIndicators(df = df)
 
 #TRAINING ====
-env_build = lambda: TradingEnv(df=df, frame_bound=(30,len(df)), window_size=30)
-env = DummyVecEnv([env_build])
-
-model_train = PPO(
-    policy = 'MlpPolicy',
-    env = env,
-    n_steps = 1024,
-    batch_size = 64,
-    n_epochs = 4,
-    gamma = 0.999,
-    gae_lambda = 0.98,
-    ent_coef = 0.01,
-    verbose=1
-)
-
-model_train.learn(total_timesteps=100000000)
-model_train.save("ppo_crypto")
+#env_build = lambda: TradingEnv(df=df, frame_bound=(30,len(df)), window_size=30)
+#env = DummyVecEnv([env_build])
+#
+#model_train = PPO(
+#    policy = 'MlpPolicy',
+#    env = env,
+#    n_steps = 1024,
+#    batch_size = 64,
+#    n_epochs = 4,
+#    gamma = 0.999,
+#    gae_lambda = 0.98,
+#    ent_coef = 0.01,
+#    verbose=1
+#)
+#
+#model_train.learn(total_timesteps=100000000)
+#model_train.save("ppo_crypto")
+#==============
 
 #TESTING =======
-###env = TradingEnv(df=df, frame_bound=(30,len(df)), window_size=30)
-###model = PPO.load("ppo_crypto", env=env)
-###
-###obs = env.reset()
-###while True: 
-###    obs = obs[np.newaxis, ...]
-###    action, _states = model.predict(obs)
-###    obs, rewards, done, info = env.step(action)
-###    if done:
-###        print("info", info)
-###        break
-###
-###plt.figure(figsize=(25,10))
-###plt.cla()
-###env.render()
-###env.save_rendering('test.png')
+env = TradingEnv(df=df, frame_bound=(30,len(df)), window_size=30)
+model = PPO.load("ppo_crypto", env=env)
+
+obs = env.reset()
+while True: 
+    obs = obs[np.newaxis, ...]
+    action, _states = model.predict(obs)
+    obs, rewards, done, info = env.step(action)
+    if done:
+        print("info", info)
+        break
+
+plt.figure(figsize=(25,10))
+plt.cla()
+env.render()
+env.save_rendering('test.png')
 
 #=======
 
