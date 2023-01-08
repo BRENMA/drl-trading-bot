@@ -10,7 +10,8 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-INDICATORS = ['high','low','open','close','fng','rsi','macd','macd_signal','macd_hist','cci','dx','rf','sar','adx','adxr','apo','aroonosc','bop','cmo','minus_di','minus_dm','mom','plus_di','plus_dm','ppo_ta','roc','rocp','rocr','rocr100','trix','ultosc','willr','ht_dcphase','ht_sine','ht_trendmode','feature_PvEWMA_4','feature_PvCHLR_4','feature_RvRHLR_4','feature_CON_4','feature_RACORR_4','feature_PvEWMA_8','feature_PvCHLR_8','feature_RvRHLR_8','feature_CON_8','feature_RACORR_8','feature_PvEWMA_16','feature_PvCHLR_16','feature_RvRHLR_16','feature_CON_16','feature_RACORR_16','feature_PvEWMA_32','feature_PvCHLR_32','feature_RvRHLR_32','feature_CON_32','feature_RACORR_32','feature_PvEWMA_64','feature_PvCHLR_64','feature_RvRHLR_64','feature_CON_64','feature_RACORR_64','feature_PvEWMA_128','feature_PvCHLR_128','feature_RvRHLR_128','feature_CON_128','feature_RACORR_128','feature_PvEWMA_256','feature_PvCHLR_256','feature_RvRHLR_256','feature_CON_256','feature_RACORR_256']
+#INDICATORS = ['high','low','open','close','fng','rsi','macd','macd_signal','macd_hist','cci','dx','rf','sar','adx','adxr','apo','aroonosc','bop','cmo','minus_di','minus_dm','mom','plus_di','plus_dm','ppo_ta','roc','rocp','rocr','rocr100','trix','ultosc','willr','ht_dcperiod','ht_dcphase','ht_sine','ht_trendmode','feature_PvEWMA_4','feature_PvCHLR_4','feature_RvRHLR_4','feature_CON_4','feature_RACORR_4','feature_PvEWMA_8','feature_PvCHLR_8','feature_RvRHLR_8','feature_CON_8','feature_RACORR_8','feature_PvEWMA_16','feature_PvCHLR_16','feature_RvRHLR_16','feature_CON_16','feature_RACORR_16','feature_PvEWMA_32','feature_PvCHLR_32','feature_RvRHLR_32','feature_CON_32','feature_RACORR_32','feature_PvEWMA_64','feature_PvCHLR_64','feature_RvRHLR_64','feature_CON_64','feature_RACORR_64','feature_PvEWMA_128','feature_PvCHLR_128','feature_RvRHLR_128','feature_CON_128','feature_RACORR_128','feature_PvEWMA_256','feature_PvCHLR_256','feature_RvRHLR_256','feature_CON_256','feature_RACORR_256']
+INDICATORS = ['high', 'fng', 'rsi', 'macd', 'macd_hist', 'cci', 'dx', 'rf', 'sar', 'adx', 'adxr', 'apo', 'aroonosc', 'bop', 'minus_di', 'minus_dm', 'mom', 'plus_di', 'plus_dm', 'ppo_ta', 'roc', 'trix', 'ultosc', 'willr', 'ht_dcperiod', 'ht_dcphase', 'ht_sine', 'ht_trendmode', 'feature_PvEWMA_4', 'feature_PvCHLR_4', 'feature_RvRHLR_4', 'feature_CON_4', 'feature_RACORR_4', 'feature_PvEWMA_8', 'feature_PvCHLR_8', 'feature_RvRHLR_8', 'feature_CON_8', 'feature_RACORR_8', 'feature_PvEWMA_16', 'feature_RvRHLR_16', 'feature_CON_16', 'feature_RACORR_16', 'feature_PvEWMA_32', 'feature_PvCHLR_32', 'feature_RvRHLR_32', 'feature_CON_32', 'feature_RACORR_32', 'feature_PvEWMA_64', 'feature_PvCHLR_64', 'feature_RvRHLR_64', 'feature_CON_64', 'feature_RACORR_64', 'feature_PvEWMA_128', 'feature_PvCHLR_128', 'feature_RvRHLR_128', 'feature_CON_128', 'feature_RACORR_128', 'feature_PvEWMA_256', 'feature_PvCHLR_256', 'feature_RvRHLR_256', 'feature_CON_256', 'feature_RACORR_256']
 
 class Actions(Enum):
         Sell = 0
@@ -209,13 +210,16 @@ class TradingEnv(gym.Env):
                 prices = self.df.loc[:, 'close'].to_numpy()
                 
                 # ====== select features ========
-                corr_matrix = self.df.corr().abs()
-                upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape),k=1).astype(np.bool));
+                #corr_matrix = self.df.corr().abs()
+                #upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape),k=1).astype(np.bool));
 
                 # selecting the columns which are having absolute correlation greater than 0.95 and making a list of those columns named 'dropping_these_features'.
-                dropping_these_features = [column for column in upper_tri.columns if any(upper_tri[column] > 0.99)]
-                for droppingFeature in dropping_these_features:
-                        self.selected_feature_name.remove(str(droppingFeature))
+                #dropping_these_features = [column for column in upper_tri.columns if any(upper_tri[column] > 0.95)]
+                #for droppingFeature in dropping_these_features:
+                #        self.selected_feature_name.remove(str(droppingFeature))
+
+                #with open("wanted_columns.txt", "w") as text_file:
+                #        print(f"keeping: {self.selected_feature_name}", file=text_file)
 
                 selected_feature = np.column_stack((self.df.loc[:, k].to_numpy() for k in self.selected_feature_name))
 

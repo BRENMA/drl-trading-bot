@@ -16,11 +16,17 @@ from talib.abstract import MACD, RSI, CCI, DX
 import talib as ta
 from typing import Dict
 
+import torch.nn as nn
 from matplotlib import pyplot as plt
+import random
+
+from collections import namedtuple, deque
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.vec_env import DummyVecEnv
+
+from torch.utils.data import Dataset, DataLoader
 
 print('\n'+'\n'+'\n'+"                                   )\._.,--....,'``.      " + '\n' + "                                  /;   _.. \   _\  (`._ ,." + '\n' + "                    $            `----(,_..'--(,_..'`-.;.'" + '\n' + '\n' + "                                                       /$$$$$$$  /$$$$$$$  /$$      " + "\n" +"                                                      | $$__  $$| $$__  $$| $$      " + "\n" +" /$$$$$$/$$$$   /$$$$$$  /$$$$$$$   /$$$$$$  /$$   /$$| $$  \ $$| $$  \ $$| $$      " + "\n" +"| $$_  $$_  $$ /$$__  $$| $$__  $$ /$$__  $$| $$  | $$| $$  | $$| $$$$$$$/| $$      " + "\n" +"| $$ \ $$ \ $$| $$  \ $$| $$  \ $$| $$$$$$$$| $$  | $$| $$  | $$| $$__  $$| $$      " + "\n" +"| $$ | $$ | $$| $$  | $$| $$  | $$| $$_____/| $$  | $$| $$  | $$| $$  \ $$| $$      " + "\n" +"| $$ | $$ | $$|  $$$$$$/| $$  | $$|  $$$$$$$|  $$$$$$$| $$$$$$$/| $$  | $$| $$$$$$$$" + "\n" +"|__/ |__/ |__/ \______/ |__/  |__/ \_______/ \____  $$|_______/ |__/  |__/|________/" + "\n" +"                                             /$$  | $$                              " + "\n" +"                                            |  $$$$$$/                              " + "\n" +"                                             \______/                               " + "\n" + "\n")
 print("creating Testing Data")
@@ -31,7 +37,6 @@ p.clean_data()
 df = p.dataframe
 
 def addFnG(df):
-    #BASING EVERYTHING OFF THE BTC DATAFRAME
     df.reset_index(drop=True, inplace=True)
     print(df.head())
 
@@ -79,7 +84,7 @@ def addFnG(df):
     running_FnG = 0
     running_open = 0
     running_high, running_low = 0, math.inf
-    dollar_threshold = 1000000
+    dollar_threshold = DOLLAR_THRESHOLD
 
     for i in range(0, len(df)): 
         print(len(df) - i)
@@ -151,8 +156,7 @@ def addIndicators(df):
         tic_df['macd'], tic_df['macd_signal'], tic_df['macd_hist'] = MACD(tic_df['close'], fastperiod=12, slowperiod=26, signalperiod=9)
         tic_df['cci'] = CCI(tic_df['high'], tic_df['low'], tic_df['close'], timeperiod=14)
         tic_df['dx'] = DX(tic_df['high'], tic_df['low'], tic_df['close'], timeperiod=14)
-    
-        #OTHERS I ADDED
+        
         #Overlap studies
         tic_df["rf"] = df["close"].pct_change().shift(-1)
         tic_df['sar'] = ta.SAR(df['high'], df['low'], acceleration=0., maximum=0.)
@@ -179,7 +183,7 @@ def addIndicators(df):
         tic_df['willr'] = ta.WILLR(df['high'], df['low'], df['close'])
 
         # Cycle indicator functions
-        tic_df['roc'] = ta.HT_DCPERIOD(df['close'])
+        tic_df['ht_dcperiod'] = ta.HT_DCPERIOD(df['close'])
         tic_df['ht_dcphase'] = ta.HT_DCPHASE(df['close'])
         tic_df['ht_sine'], _ = ta.HT_SINE(df['close'])
         tic_df['ht_trendmode'] = ta.HT_TRENDMODE(df['close'])
@@ -192,7 +196,7 @@ def addIndicators(df):
         # prune the nan rows at the beginning of the dataframe
         tic_df = tic_df.dropna()
 
-        final_df = final_df.append(tic_df)
+        final_df = pd.concat([tic_df, final_df])
 
     df = final_df
     df.index=pd.to_datetime(df.time)
@@ -200,9 +204,6 @@ def addIndicators(df):
     df.drop('tic', inplace=True, axis=1)
 
     min_max_scaler = MinMaxScaler()
-
-    #df[df.columns] = min_max_scaler.fit_transform(df[df.columns]) 
-
     for column in df.columns:
         if column != 'close':
             df[column] = min_max_scaler.fit_transform(df[[column]])
@@ -213,76 +214,214 @@ def addIndicators(df):
 
 df = addIndicators(df = df)
 
+#df.to_csv('data.csv')
+
 #TRAINING ====
-#env_build = lambda: TradingEnv(df=df, frame_bound=(30,len(df)), window_size=30)
-#env = DummyVecEnv([env_build])
-#
-#model_train = PPO(
-#    policy = 'MlpPolicy',
-#    env = env,
-#    n_steps = 1024,
-#    batch_size = 64,
-#    n_epochs = 4,
-#    gamma = 0.999,
-#    gae_lambda = 0.98,
-#    ent_coef = 0.01,
-#    verbose=1
-#)
-#
-#model_train.learn(total_timesteps=100000000)
-#model_train.save("ppo_crypto")
+############env_build = lambda: TradingEnv(df=df, frame_bound=(10,len(df)), window_size=10)
+############env = DummyVecEnv([env_build])
+############
+############model_train = PPO(policy = 'MlpPolicy', env = env, learning_rate=0.0005, batch_size=2048, gamma = 0.985, verbose=1)
+############model_train.learn(total_timesteps=4000000)
+############model_train.save("ppo_crypto")
 #==============
 
 #TESTING =======
-env = TradingEnv(df=df, frame_bound=(30,len(df)), window_size=30)
-model = PPO.load("ppo_crypto", env=env)
-
-obs = env.reset()
-while True: 
-    obs = obs[np.newaxis, ...]
-    action, _states = model.predict(obs)
-    obs, rewards, done, info = env.step(action)
-    if done:
-        print("info", info)
-        break
-
-plt.figure(figsize=(25,10))
-plt.cla()
-env.render()
-env.save_rendering('test.png')
+##########env = TradingEnv(df=df, frame_bound=(10,len(df)), window_size=10)
+##########model = PPO.load("ppo_crypto", env=env)
+##########
+##########obs = env.reset()
+##########while True: 
+##########    obs = obs[np.newaxis, ...]
+##########    action, _states = model.predict(obs)
+##########    obs, rewards, done, info = env.step(action)
+##########    if done:
+##########        print("info", info)
+##########        break
+##########
+##########plt.figure(figsize=(25,10))
+##########plt.cla()
+##########env.render()
+##########env.save_rendering('test.png')
 
 #=======
 
-#env = TradingEnv(df=df, frame_bound=(5,10), window_size=5)
-#state = env.reset()
-#while True: 
-#    action = env.action_space.sample()
-#    n_state, reward, done, info = env.step(action)
-#    if done: 
-#        print("info", info)
-#        break
-#
-#plt.figure(figsize=(30,10))
-#plt.cla()
-#env.render()
-#env.save_rendering('test.png')
-#env = gym.make('gym_examples/TradingEnv-v0', df = df, window_size = 5, frame_bound = (5, 50))
-#model = DQN("MlpPolicy", env, verbose=1)
-#
-#model.learn(total_timesteps=10_000, progress_bar=True)
-#
-#model.save("dqn_crypto")
-#del model  # delete trained model to demonstrate loading
 
-#model = DQN.load("dqn_crypto", env=env)
-#mean_reward, std_reward = evaluate_policy(model, model.get_env(), n_eval_episodes=10)
-#print(mean_reward)
-#print(std_reward)
-#
-#vec_env = model.get_env()
-#obs = vec_env.reset()
-#for i in range(5):
-#    action, _states = model.predict(obs, deterministic=True)
-#    obs, rewards, dones, info = vec_env.step(action)
-#    vec_env.render()
-#
+Transition = namedtuple("Transition", ["States", "Actions", "Rewards", "NextStates", "Dones"])
+
+class ReplayMemory:
+    """
+    Implementation of Agent memory
+    """
+    def __init__(self, capacity=MEMORY_LEN):
+        self.memory = deque(maxlen=capacity)
+
+    def store(self, t):
+        self.memory.append(t)
+
+    def sample(self, n):
+        a = random.sample(self.memory, n)
+        return a
+
+    def __len__(self):
+        return len(self.memory)
+
+class DuellingDQN(nn.Module):
+    """
+    Acrchitecture for Duelling Deep Q Network Agent
+    """
+
+    def __init__(self, input_dim=STATE_SPACE, output_dim=ACTION_SPACE):
+        super(DuellingDQN, self).__init__()
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+
+        self.fc1 = nn.Linear(self.input_dim, 500)
+        self.fc2 = nn.Linear(500, 500)
+        self.fc3 = nn.Linear(500, 300)
+        self.fc4 = nn.Linear(300, 200)
+        self.fc5 = nn.Linear(200, 10)
+
+        self.fcs = nn.Linear(10, 1)
+        self.fcp = nn.Linear(10, self.output_dim)
+        self.fco = nn.Linear(self.output_dim + 1, self.output_dim)
+
+        self.relu = nn.ReLU()
+        self.tanh = nn.Tanh()
+        self.sig = nn.Sigmoid()
+        self.sm = nn.Softmax(dim=1)
+
+    def forward(self, state):
+        x = self.relu(self.fc1(state))
+        x = self.relu(self.fc2(x))
+        x = self.relu(self.fc3(x))
+        x = self.relu(self.fc4(x))
+        x = self.relu(self.fc5(x))
+        xs = self.relu(self.fcs(x))
+        xp = self.relu(self.fcp(x))
+
+        x = xs + xp - xp.mean()
+        return x
+
+class DQNAgent:
+    """
+    Implements the Agent components
+    """
+
+    def __init__(self, actor_net=DuellingDQN, memory=ReplayMemory()):
+        
+        self.actor_online = actor_net(STATE_SPACE, ACTION_SPACE).to(DEVICE)
+        self.actor_target = actor_net(STATE_SPACE, ACTION_SPACE).to(DEVICE)
+        self.actor_target.load_state_dict(self.actor_online.state_dict())
+        self.actor_target.eval()
+
+        self.memory = memory
+
+        self.actor_criterion = nn.MSELoss()
+        self.actor_op = torch.optim.Adam(self.actor_online.parameters(), lr=LR_DQN)
+
+        self.t_step = 0
+
+
+    def act(self, state, eps=0.):
+        self.t_step += 1
+        state = torch.from_numpy(state).float().to(DEVICE).view(1, -1)
+        
+        self.actor_online.eval()
+        with torch.no_grad():
+            actions = self.actor_online(state)
+        self.actor_online.train()
+
+        if random.random() > eps:
+            act = np.argmax(actions.cpu().data.numpy())
+        else:
+            act = random.choice(np.arange(ACTION_SPACE))
+        return int(act)
+
+
+    def learn(self):
+        if len(self.memory) <= MEMORY_THRESH:
+            return 0
+
+        if self.t_step > LEARN_AFTER and self.t_step % LEARN_EVERY==0:
+            # Sample experiences from the Memory
+            batch = self.memory.sample(BATCH_SIZE)
+
+            states = np.vstack([t.States for t in batch])
+            states = torch.from_numpy(states).float().to(DEVICE)
+
+            actions = np.vstack([t.Actions for t in batch])
+            actions = torch.from_numpy(actions).float().to(DEVICE)
+
+            rewards = np.vstack([t.Rewards for t in batch])
+            rewards = torch.from_numpy(rewards).float().to(DEVICE)
+
+            next_states = np.vstack([t.NextStates for t in batch])
+            next_states = torch.from_numpy(next_states).float().to(DEVICE)
+
+            dones = np.vstack([t.Dones for t in batch]).astype(np.uint8)
+            dones = torch.from_numpy(dones).float().to(DEVICE)
+
+            # ACTOR UPDATE
+            # Compute next state actions and state values
+            next_state_values = self.actor_target(next_states).max(1)[0].unsqueeze(1)
+            y = rewards + (1-dones) * GAMMA * next_state_values
+            state_values = self.actor_online(states).gather(1, actions.type(torch.int64))
+            # Compute Actor loss
+            actor_loss = self.actor_criterion(y, state_values)
+            # Minimize Actor loss
+            self.actor_op.zero_grad()
+            actor_loss.backward()
+            self.actor_op.step()
+
+            if self.t_step % UPDATE_EVERY == 0:
+                self.soft_update(self.actor_online, self.actor_target)
+            # return actor_loss.item()
+
+    def soft_update(self, local_model, target_model, tau=TAU):
+        for target_param, local_param in zip(target_model.parameters(), local_model.parameters()):
+            target_param.data.copy_(tau*local_param.data + (1.0-tau)*target_param.data)
+
+memory = ReplayMemory()
+agent = DQNAgent(actor_net=DuellingDQN, memory=memory)
+
+env = TradingEnv(df=df, frame_bound=(20,len(df)), window_size=20)
+
+# Main training loop
+N_EPISODES = 20 # No of episodes/epochs
+scores = []
+eps = EPS_START
+
+te_score_min = -np.Inf
+for episode in range(1, 1 + N_EPISODES):
+    counter = 0
+    episode_score = 0
+    episode_score2 = 0
+    test_score = 0
+    test_score2 = 0
+
+    score = 0
+    state = env.reset()
+    state = state.reshape(-1, STATE_SPACE)
+    while True:
+        action = agent.act(state, eps)
+        next_state, reward, done, _ = env.step(action)
+        next_state = next_state.reshape(-1, STATE_SPACE)
+
+        t = Transition(state, action, reward, next_state, done)
+        agent.memory.store(t)
+        agent.learn()
+
+        state = next_state
+        score += reward
+        counter += 1
+        if done:
+            break
+
+    episode_score += score
+    episode_score2 += (env.store['running_capital'][-1] - env.store['running_capital'][0])
+
+    scores.append(episode_score)
+    eps = max(EPS_END, EPS_DECAY * eps)
+
+    print(f"Episode: {episode}, Train Score: {episode_score:.5f}, Validation Score: {test_score:.5f}")
+    print(f"Episode: {episode}, Train Value: ${episode_score2:.5f}, Validation Value: ${test_score2:.5f}", "\n")

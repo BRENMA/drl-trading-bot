@@ -109,7 +109,7 @@ class tradingExecution:
         self.running_FnG = 0
         self.running_open = 0
         self.running_high, self.running_low = 0, math.inf
-        self.dollar_threshold = 10000#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1000000
+        self.dollar_threshold = DOLLAR_THRESHOLD
 
         self.signal_features = []
 
