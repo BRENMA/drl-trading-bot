@@ -36,6 +36,11 @@ p.download_data(TICKER_LIST)
 p.clean_data()
 df = p.dataframe
 
+t = DataProcessor(data_source='binance', start_date=TEST_START_DATE, end_date=TEST_END_DATE, time_interval=TIME_INTERVAL)
+t.download_data(TICKER_LIST)
+t.clean_data()
+df_test = t.dataframe
+
 def addFnG(df):
     df.reset_index(drop=True, inplace=True)
     print(df.head())
@@ -134,6 +139,7 @@ def addFnG(df):
     return df
 
 df = addFnG(df = df)
+df_test = addFnG(df = df_test)
 
 def add_feature_columns(df, period_length):
     # get the price vs ewma feature
@@ -213,6 +219,7 @@ def addIndicators(df):
     return df
 
 df = addIndicators(df = df)
+df_test = addIndicators(df = df_test)
 
 #df.to_csv('data.csv')
 
@@ -245,7 +252,6 @@ df = addIndicators(df = df)
 
 #=======
 
-
 Transition = namedtuple("Transition", ["States", "Actions", "Rewards", "NextStates", "Dones"])
 
 class ReplayMemory:
@@ -266,9 +272,6 @@ class ReplayMemory:
         return len(self.memory)
 
 class DuellingDQN(nn.Module):
-    """
-    Acrchitecture for Duelling Deep Q Network Agent
-    """
 
     def __init__(self, input_dim=STATE_SPACE, output_dim=ACTION_SPACE):
         super(DuellingDQN, self).__init__()
@@ -308,7 +311,6 @@ class DQNAgent:
     """
 
     def __init__(self, actor_net=DuellingDQN, memory=ReplayMemory()):
-        
         self.actor_online = actor_net(STATE_SPACE, ACTION_SPACE).to(DEVICE)
         self.actor_target = actor_net(STATE_SPACE, ACTION_SPACE).to(DEVICE)
         self.actor_target.load_state_dict(self.actor_online.state_dict())
@@ -324,6 +326,7 @@ class DQNAgent:
 
     def act(self, state, eps=0.):
         self.t_step += 1
+        state = state[0]
         state = torch.from_numpy(state).float().to(DEVICE).view(1, -1)
         
         self.actor_online.eval()
@@ -364,6 +367,7 @@ class DQNAgent:
             # ACTOR UPDATE
             # Compute next state actions and state values
             next_state_values = self.actor_target(next_states).max(1)[0].unsqueeze(1)
+
             y = rewards + (1-dones) * GAMMA * next_state_values
             state_values = self.actor_online(states).gather(1, actions.type(torch.int64))
             # Compute Actor loss
@@ -384,14 +388,15 @@ class DQNAgent:
 memory = ReplayMemory()
 agent = DQNAgent(actor_net=DuellingDQN, memory=memory)
 
-env = TradingEnv(df=df, frame_bound=(20,len(df)), window_size=20)
+env = TradingEnv(df=df, frame_bound=(1,len(df)), window_size=1)
+test_env = TradingEnv(df=df_test, frame_bound=(1,len(df_test)), window_size=1)
 
 # Main training loop
-N_EPISODES = 20 # No of episodes/epochs
+N_EPISODES = 200 # No of episodes/epochs
 scores = []
 eps = EPS_START
 
-te_score_min = -np.Inf
+te_score_min = 0
 for episode in range(1, 1 + N_EPISODES):
     counter = 0
     episode_score = 0
@@ -418,10 +423,32 @@ for episode in range(1, 1 + N_EPISODES):
             break
 
     episode_score += score
-    episode_score2 += (env.store['running_capital'][-1] - env.store['running_capital'][0])
 
     scores.append(episode_score)
     eps = max(EPS_END, EPS_DECAY * eps)
 
-    print(f"Episode: {episode}, Train Score: {episode_score:.5f}, Validation Score: {test_score:.5f}")
-    print(f"Episode: {episode}, Train Value: ${episode_score2:.5f}, Validation Value: ${test_score2:.5f}", "\n")
+    state_test = test_env.reset()
+    done = False
+    score_te = 0
+    scores_te = [score_te]
+
+    while True:
+        action = agent.act(state_test)
+        next_state, reward, done, _ = test_env.step(action)
+        next_state = next_state.reshape(-1, STATE_SPACE)
+        state_test = next_state
+        score_te += reward
+        scores_te.append(score_te)
+        if done:
+            break
+
+    test_score += score_te
+
+    if test_score > te_score_min:
+        te_score_min = test_score
+        torch.save(agent.actor_online.state_dict(), "online.pt")
+        torch.save(agent.actor_target.state_dict(), "target.pt")
+
+    print(f"Episode: {episode}, Train Score: {episode_score:.5f}")
+    print(f"Episode: {episode}, Test Value: {test_score:.5f}", "\n")
+
